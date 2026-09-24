@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#05060c">
+  <meta name="description" content="Watch Australian spiders build their webs, thread by thread.">
+  <title>Spun, not drawn — orb weavers &amp; snares</title>
+  <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar" aria-label="Viewer controls">
+      <a class="brand" href="./" aria-label="Spun, not drawn home">
+        <span class="brand-title">Spun, not drawn</span>
+        <span class="brand-subtitle">Orb weavers &amp; snares</span>
+      </a>
+      <nav class="species-area" aria-label="Choose a spider">
+        <div class="species-rows" id="species-rows" role="radiogroup" aria-label="Spider species"></div>
+      </nav>
+      <div class="status-pill" id="status-pill" aria-hidden="true">Choose a web, then plant it on the stage.</div>
+      <div class="control-group" role="radiogroup" aria-label="Lighting mode" id="mode-group">
+        <button class="segment" type="button" role="radio" aria-checked="true" tabindex="0" data-value="dusk">Dusk</button>
+        <button class="segment" type="button" role="radio" aria-checked="false" tabindex="-1" data-value="dawn" disabled>Dawn</button>
+      </div>
+      <div class="control-group" role="radiogroup" aria-label="Renderer" id="backend-group">
+        <button class="segment" type="button" role="radio" aria-checked="true" tabindex="0" data-value="2d">2D</button>
+        <button class="segment" type="button" role="radio" aria-checked="false" tabindex="-1" data-value="gl" disabled>GL</button>
+      </div>
+      <button class="clear-button" id="clear-button" type="button">Clear <kbd>Esc</kbd></button>
+    </header>
+    <section class="stage" id="stage" aria-label="Web building stage">
+      <canvas id="web-canvas" tabindex="0" aria-label="A dark stage where spider webs are planted and built. Click or tap to plant the selected spider web; press Enter or Space while focused to plant at the centre. Press Escape to clear."></canvas>
+      <canvas id="overlay-canvas" aria-hidden="true"></canvas>
+      <p class="stage-hint" id="stage-hint">Choose a species, then click anywhere to plant.</p>
+    </section>
+    <span class="sr-only" id="live-status" role="status" aria-live="polite" aria-atomic="true"></span>
+  </main>
+</body>
+</html>
