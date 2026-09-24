@@ -55,9 +55,9 @@ export class Renderer2D {
       if (!instance.buffers || instance.buffers.invalid) this.createBuffers(instance);
       this.updatePermanent(instance);
       this.drawDynamic(instance);
-      this.composeSharp(instance);
       const rect = instance.placement.screenBounds;
-      ctx.drawImage(instance.buffers.combined, rect.left, rect.top, rect.width, rect.height);
+      ctx.drawImage(instance.buffers.permanent, rect.left, rect.top, rect.width, rect.height);
+      ctx.drawImage(instance.buffers.dynamic, rect.left, rect.top, rect.width, rect.height);
     }
     if (!this.glowEnabled) return;
     for (const instance of instances) {
@@ -101,8 +101,6 @@ export class Renderer2D {
       permanentCtx, dynamicCtx, combinedCtx, glowCtx,
       builtThrough: -1,
       dynamicCursor: NaN,
-      combinedCursor: NaN,
-      activeTemporary: false,
       glowUsable: "filter" in glowCtx,
       glowCursor: NaN,
       glowPad,
@@ -145,6 +143,7 @@ export class Renderer2D {
     buffers.builtThrough = Math.max(buffers.builtThrough, complete);
   }
 
+  // Dynamic layer: live/fading temporaries plus the tip, redrawn only when the cursor moves.
   drawDynamic(instance) {
     const { data, cursor, buffers } = instance;
     if (buffers.dynamicCursor === cursor) return;
@@ -154,78 +153,37 @@ export class Renderer2D {
     ctx.clearRect(0, 0, buffers.dynamic.width, buffers.dynamic.height);
     ctx.restore();
     const threshold = minLod(instance.placement.detail);
-    const completed = Math.floor(cursor);
-    buffers.activeTemporary = false;
+    const scale = instance.placement.scale;
+    const fadeRecords = instance.specimen.fadeRecords || 6;
+    const completed = Math.min(data.count, Math.floor(cursor));
     for (let n = 0; n < data.temporary.length; n++) {
       const i = data.temporary[n];
       if (i >= completed) continue;
-      if (opacityAt(data, i, cursor, instance.specimen.fadeRecords || 6) <= 0) continue;
-      if (!lodVisible(data, i, threshold) || (data.styles[i * 8 + 6] & FLAG_INVISIBLE)) continue;
-      buffers.activeTemporary = true;
-      break;
+      if ((data.styles[i * 8 + 6] & FLAG_INVISIBLE) || !lodVisible(data, i, threshold)) continue;
+      const alpha = opacityAt(data, i, cursor, fadeRecords);
+      if (alpha <= 0) continue;
+      this.strokeRecord(ctx, data, i, alpha, scale);
+      this.recordsDrawnLastFrame++;
+      this.temporaryRecordsDrawnLastFrame++;
+      for (let b = data.beadStart[i]; b < data.beadEnd[i]; b++) {
+        if (!(data.beadFlags[b] & BEAD_GLUE)) continue;
+        if (this.drawBead(ctx, instance, b, 1, alpha)) this.beadsDrawnLastFrame++;
+      }
     }
-    if (!buffers.activeTemporary && completed < data.count) {
-      const fraction = cursor - completed;
+    const fraction = cursor - completed;
+    if (completed < data.count && fraction > 0) {
       const flags = data.styles[completed * 8 + 6];
-      if (fraction > 0 && !(flags & FLAG_INVISIBLE) && lodVisible(data, completed, threshold)) {
-        this.strokeRecord(ctx, data, completed, 1, instance.placement.scale, fraction);
+      if (!(flags & FLAG_INVISIBLE) && lodVisible(data, completed, threshold)) {
+        const alpha = opacityAt(data, completed, cursor, fadeRecords);
+        this.strokeRecord(ctx, data, completed, alpha, scale, fraction);
         this.recordsDrawnLastFrame++;
+        if (data.deaths[completed] !== 0xffffffff) this.temporaryRecordsDrawnLastFrame++;
       }
     }
     buffers.dynamicCursor = cursor;
-    buffers.combinedCursor = NaN;
     buffers.glowCursor = NaN;
   }
 
-  composeSharp(instance) {
-    const { data, cursor, buffers } = instance;
-    if (buffers.combinedCursor === cursor) return;
-    const ctx = buffers.combinedCtx;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, buffers.combined.width, buffers.combined.height);
-    if (buffers.activeTemporary) {
-      const threshold = minLod(instance.placement.detail);
-      const scale = instance.placement.scale;
-      const rect = instance.placement.screenBounds;
-      const linear = scale * this.stage.dpr;
-      const tx = (instance.placement.originX - rect.left) * this.stage.dpr;
-      const ty = (instance.placement.originY - rect.top) * this.stage.dpr;
-      ctx.setTransform(linear, 0, 0, linear, tx, ty);
-      const completed = Math.min(data.count, Math.floor(cursor));
-      for (let i = 0; i < completed; i++) {
-        const offset = i * 8;
-        const flags = data.styles[offset + 6];
-        if ((flags & FLAG_INVISIBLE) || !lodVisible(data, i, threshold)) continue;
-        const death = data.deaths[i];
-        const alpha = opacityAt(data, i, cursor, instance.specimen.fadeRecords || 6);
-        if (alpha <= 0) continue;
-        this.strokeRecord(ctx, data, i, alpha, scale);
-        this.recordsDrawnLastFrame++;
-        if (death !== 0xffffffff) this.temporaryRecordsDrawnLastFrame++;
-        for (let bead = data.beadStart[i]; bead < data.beadEnd[i]; bead++) {
-          if (!(data.beadFlags[bead] & BEAD_GLUE)) continue;
-          if (this.drawBead(ctx, instance, bead, 1, alpha)) this.beadsDrawnLastFrame++;
-        }
-      }
-      const tip = Math.floor(cursor);
-      const fraction = cursor - tip;
-      if (tip < data.count && fraction > 0) {
-        const flags = data.styles[tip * 8 + 6];
-        if (!(flags & FLAG_INVISIBLE) && lodVisible(data, tip, threshold)) {
-          this.strokeRecord(ctx, data, tip, 1, scale, fraction);
-          this.recordsDrawnLastFrame++;
-          if (data.deaths[tip] !== 0xffffffff) this.temporaryRecordsDrawnLastFrame++;
-        }
-      }
-    } else {
-      ctx.drawImage(buffers.permanent, 0, 0);
-      ctx.drawImage(buffers.dynamic, 0, 0);
-    }
-    ctx.restore();
-    buffers.combinedCursor = cursor;
-    buffers.glowCursor = NaN;
-  }
   strokeRecord(ctx, data, index, alpha, scale, fraction = 1) {
     const coordinate = index * 4;
     const x0 = data.coords[coordinate];
@@ -283,7 +241,10 @@ export class Renderer2D {
   updateGlow(instance) {
     const buffers = instance.buffers;
     if (buffers.glowCursor === instance.cursor) return;
-    const { glowCtx, combined, glow, glowPad, glowWidth, glowHeight } = buffers;
+    const { combinedCtx, combined, glowCtx, glow, glowPad, glowWidth, glowHeight } = buffers;
+    combinedCtx.clearRect(0, 0, combined.width, combined.height);
+    combinedCtx.drawImage(buffers.permanent, 0, 0);
+    combinedCtx.drawImage(buffers.dynamic, 0, 0);
     glowCtx.save();
     glowCtx.setTransform(1, 0, 0, 1, 0, 0);
     glowCtx.clearRect(0, 0, glow.width, glow.height);
