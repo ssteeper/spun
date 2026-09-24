@@ -1,6 +1,7 @@
 """Sequential orb program S1–S9, including emergent spiral turnbacks."""
 
 from dataclasses import dataclass
+from typing import Callable
 import math
 import zlib
 
@@ -8,6 +9,7 @@ import numpy as np
 
 from .builder import Builder, PlanGraph
 from .emit import emit
+from .kinds import BY_NAME, COLORS
 from .geometry import length, ray_polygon
 from .pacing import pace
 from .relax import relax
@@ -36,6 +38,7 @@ class OrbParameters:
     pose: str = "hub-rest"
     golden: bool = False
     open_sectors: tuple[tuple[float, float], ...] = ()
+    extra: Callable | None = None
 
 
 @dataclass
@@ -60,6 +63,23 @@ class OrbResult:
     radial_gap_cv: float
     spacing_cv: float
     env_fraction: float
+
+
+@dataclass
+class OrbPlan:
+    spec: OrbParameters
+    builder_index: int
+    anchors: list[int]
+    hub: int
+    rays: list[Ray]
+    frame_threads: tuple[int, ...]
+    turnbacks: int
+    turnback_locations: list[tuple[int, float]]
+
+
+# Largest radial drop, in units of the chord's arc length, that an inward row
+# accepts onto an already-visited neighbour before she turns back.
+SLANT = 0.5
 
 
 def _between_open(angle, sectors):
@@ -134,11 +154,19 @@ def _add_radii(builder, hub, polygon, seed_rays, frame_threads, target, rng, sec
 
 
 def _ray_junction(graph, ray, hub, distance):
+    """Attach at ``distance`` on the spoke, reusing a node closer than 1 px.
+
+    Sub-pixel radial stubs between two nearly coincident junctions quantize
+    into false crossings, so near neighbours share one knot instead.
+    """
     origin = graph.position(hub)
     destination = graph.position(ray.foot)
     span = length(origin, destination)
     if not 0 < distance < span:
         raise ValueError("radial junction lies outside its spoke")
+    for node in graph.final_subpath(ray.thread, hub, ray.foot)[1:]:
+        if node != hub and abs(length(origin, graph.position(node))-distance) < 1.0:
+            return node
     return graph.attach(ray.thread, (origin[0]+distance/span*(destination[0]-origin[0]),
                                      origin[1]+distance/span*(destination[1]-origin[1])))
 
@@ -169,47 +197,54 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
     turnback_locations = []
     laid = []
     remaining_aux = dict(auxiliaries)
-    blocked = set()
+
+    def candidate(origin, neighbour, heading, step):
+        angle0, angle1 = rays[origin].angle, rays[neighbour].angle
+        arc = ((angle1-angle0) if heading == 1 else (angle0-angle1)) % math.tau
+
+        def along(theta):
+            return ((theta-angle0) if heading == 1 else (angle0-theta)) % math.tau
+        across = any(_between_open(angle0, ((start, end),)) or
+                     _between_open(angle1, ((start, end),)) or
+                     0 < along((start+(end-start) % math.tau/2) % math.tau) < arc
+                     for start, end in sectors)
+        if across:
+            return None
+        radial = (first[neighbour] if visits[neighbour] == 0 else
+                  frontiers[neighbour] - step if inward else frontiers[neighbour] + step)
+        if inward and radial <= limits[neighbour]:
+            if frontiers[neighbour]-limits[neighbour] < 0.5*step:
+                return None
+            radial = limits[neighbour]+0.5
+        elif not inward and radial >= limits[neighbour]:
+            return None
+        # A neighbour whose row already lies deeper than her own level by more
+        # than the chord's arc has no room *here*; she turns back and the deep
+        # side of the web gains the extra rows (emergent turnbacks).
+        if (inward and visits[neighbour] and
+                frontiers[origin]-radial > max(step, SLANT*radial*arc)):
+            return None
+        return radial
+
     for _ in range(50000):
         base_spacing = (inner+(outer-inner)*frontiers[index]/rays[index].radius
                         if inward else aux_spacing)
         step = max(0.25, base_spacing*(1+rng.normal(0, 0.08)) if inward else base_spacing)
-
-        def candidate(neighbour):
-            angle0, angle1 = rays[index].angle, rays[neighbour].angle
-            arc = ((angle1-angle0) if direction == 1 else (angle0-angle1)) % math.tau
-            def along(theta):
-                return ((theta-angle0) if direction == 1 else (angle0-theta)) % math.tau
-            across = any(_between_open(angle0, ((start, end),)) or
-                         _between_open(angle1, ((start, end),)) or
-                         0 < along((start+(end-start) % math.tau/2) % math.tau) < arc
-                         for start, end in sectors)
-            if across:
-                return None
-            radial = (first[neighbour] if visits[neighbour] == 0 else
-                      frontiers[neighbour] - step if inward else frontiers[neighbour] + step)
-            if inward and radial <= limits[neighbour]:
-                if frontiers[neighbour]-limits[neighbour] <= 0.5:
-                    return None
-                radial = limits[neighbour]+0.5
-            elif not inward and radial >= limits[neighbour]:
-                return None
-            return radial
-
         neighbour = (index+direction) % n
-        radius = candidate(neighbour)
+        radius = candidate(index, neighbour, direction, step)
         if radius is None:
-            direction = -direction
-            neighbour = (index+direction) % n
-            radius = candidate(neighbour)
+            neighbour = (index-direction) % n
+            radius = candidate(index, neighbour, -direction, step)
             if radius is not None:
+                direction = -direction
                 turnbacks += 1
                 turnback_locations.append((visits[index]-1, round(math.degrees(rays[index].angle), 1)))
         if radius is None:
-            blocked.add(index)
+            # Only spokes from which a chord can actually leave are jump targets.
             room = [(f-r_free if inward else lim-f, j)
                     for j, (f, lim) in enumerate(zip(frontiers, limits))
-                    if j not in blocked]
+                    if j != index and any(candidate(j, (j+h) % n, h, step) is not None
+                                          for h in (1, -1))]
             if not room:
                 break
             available, j = max(room)
@@ -240,13 +275,10 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
     return laid, turnbacks, list(remaining_aux), turnback_locations
 
 
-def build_orb(spec: OrbParameters):
-    seed = zlib.crc32(spec.id.encode("utf-8"))
-    rng = np.random.default_rng(seed)
-    bark_rng = np.random.default_rng(seed ^ 0x9E3779B9)
-    graph = PlanGraph()
-    anchors, first = orb_scaffold(graph, spec.polygon, bark_rng, spec.branches)
-    builder = Builder(graph, first)
+def _plan_orb(spec: OrbParameters, graph: PlanGraph, anchors: list[int],
+              first: int, builder_index: int) -> OrbPlan:
+    rng = np.random.default_rng(zlib.crc32(spec.id.encode("utf-8")))
+    builder = Builder(graph, first, index=builder_index)
     builder.walk_to(anchors[0])
     bridge = builder.spin([anchors[0], anchors[1]], "BRIDGE")
     a, b = spec.polygon[0], spec.polygon[1]
@@ -262,7 +294,6 @@ def build_orb(spec: OrbParameters):
     right = builder.spin(anchors[1:bottom_anchor+1], "FRAME")
     left = builder.spin(anchors[bottom_anchor:]+[anchors[0]], "FRAME")
     frame_threads = (bridge, right, left)
-    # Each frame edge belongs to one of the three spun polygon paths.
     edge_threads = (bridge,) + (right,)*(bottom_anchor-1) + (left,)*(len(anchors)-bottom_anchor)
     builder.walk_to(hub)
     seed_rays = [Ray(math.atan2(graph.position(foot)[1]-graph.position(hub)[1],
@@ -275,42 +306,47 @@ def build_orb(spec: OrbParameters):
     builder.walk_to(hub)
     _hub(builder, rays, hub, spec.free_radius)
     auxiliary, _, _, _ = _spiral(builder, rays, hub, inward=False, r_free=spec.free_radius,
-                              aux_spacing=spec.auxiliary_spacing, inner=spec.spacing_inner,
-                              outer=spec.spacing_outer, rng=rng, sectors=spec.open_sectors)
-    _, turnbacks, residual, turnback_locations = _spiral(builder, rays, hub, inward=True,
-                                     r_free=spec.free_radius, aux_spacing=spec.auxiliary_spacing,
-                                     inner=spec.spacing_inner, outer=spec.spacing_outer,
-                                     rng=rng, sectors=spec.open_sectors,
-                                     auxiliaries=({thread: (j, a, k, b)
-                                                   for thread, j, a, k, b in auxiliary}
-                                                  if not spec.golden else {}))
+                                 aux_spacing=spec.auxiliary_spacing, inner=spec.spacing_inner,
+                                 outer=spec.spacing_outer, rng=rng, sectors=spec.open_sectors)
+    _, turnbacks, residual, turnback_locations = _spiral(
+        builder, rays, hub, inward=True, r_free=spec.free_radius,
+        aux_spacing=spec.auxiliary_spacing, inner=spec.spacing_inner,
+        outer=spec.spacing_outer, rng=rng, sectors=spec.open_sectors,
+        auxiliaries=({thread: (j, a, k, b) for thread, j, a, k, b in auxiliary}
+                     if not spec.golden else {}))
     if residual and not spec.golden:
         builder.remove(residual)
     builder.walk_to(hub)
+    rest_node = spec.extra(builder, rays, hub, anchors, rng, spec) if spec.extra else None
+    builder.walk_to(hub if rest_node is None else rest_node)
     builder.rest(spec.pose, math.pi/2)
-    radial_paths = [graph.final_subpath(ray.thread, hub, ray.foot) for ray in rays]
-    relaxation = relax(graph, radial_paths, float(np.mean([ray.radius for ray in rays])))
-    records, beads, rest = emit(graph)
-    data = write_silk(spec.width, spec.height, 1, records, beads)
-    timing = pace(records, spec.duration)
-    frame = [list(graph.position(anchor)) for anchor in anchors]
-    ray_ends = [list(graph.position(ray.foot)) for ray in rays]
-    metadata = {"kind": "orb", "golden": spec.golden,
-                "orbs": [{"builder": 0, "hub": list(graph.position(hub)),
-                          "frame": frame, "radii": ray_ends,
-                          "openSectors": [list(s) for s in spec.open_sectors]}],
-                "timeline": timing["timeline"], "stages": timing["stages"],
-                "rests": {0: (rest[0]["x"], rest[0]["y"])},
-                "catalogueBytes": len(data), "indexBytes": 0,
-                "defaultBytes": len(data)}
-    validate(data, metadata)
-    angles = sorted(ray.angle for ray in rays)
-    gaps = [(angles[(i+1)%len(angles)]-angle) % math.tau for i, angle in enumerate(angles)]
-    radial_gap_cv = float(np.std(gaps)/np.mean(gaps))
-    # Measure successive junction gaps on every spoke after quantization.
+    if spec.golden:
+        palette = {"BRIDGE": "golden_frame", "FRAME": "golden_frame",
+                   "RADIUS": "golden_radius", "CAPTURE": "golden_capture",
+                   "AUX": "golden_aux"}
+        for action in graph.actions:
+            if action.operation != "spin" or action.builder != builder_index:
+                continue
+            thread = graph.threads[action.payload]
+            if thread.kind in palette:
+                color = tuple(bytes.fromhex(COLORS[palette[thread.kind]][1:]))
+                kind = BY_NAME[thread.kind]
+                alpha = 0.32 if thread.kind == "AUX" else kind.alpha
+                thread.styles = [(kind.width, color, alpha)]*(len(thread.path)-1)
+    return OrbPlan(spec, builder_index, anchors, hub, rays, frame_threads,
+                   turnbacks, turnback_locations)
+
+
+def _orb_metrics(graph: PlanGraph, plan: OrbPlan) -> tuple[float, float]:
+    rays = plan.rays
+    gaps = [(rays[(i+1) % len(rays)].angle-ray.angle) % math.tau
+            for i, ray in enumerate(rays)]
     junctions = [[] for _ in rays]
-    origin = np.array(graph.position(hub))
-    for thread in graph.threads:
+    origin = np.array(graph.position(plan.hub))
+    for action in graph.actions:
+        if action.operation != "spin" or action.builder != plan.builder_index:
+            continue
+        thread = graph.threads[action.payload]
         if thread.kind != "CAPTURE":
             continue
         for spoke, node in zip(thread.data["spokes"], (thread.path[0], thread.path[-1])):
@@ -318,12 +354,85 @@ def build_orb(spec: OrbParameters):
             junctions[spoke].append(float(np.linalg.norm(point-origin)))
     spacing = []
     for values in junctions:
-        ordered = sorted(values)
         distinct = []
-        for value in ordered:
+        for value in sorted(values):
             if not distinct or value-distinct[-1] > 0.26:
                 distinct.append(value)
         spacing.extend(b-a for a, b in zip(distinct, distinct[1:]))
-    spacing_cv = float(np.std(spacing)/np.mean(spacing))
+    return float(np.std(gaps)/np.mean(gaps)), float(np.std(spacing)/np.mean(spacing))
+
+
+def _finish_orbs(specs: tuple[OrbParameters, ...], graph: PlanGraph,
+                 plans: list[OrbPlan]) -> OrbResult:
+    radial_paths = [graph.final_subpath(ray.thread, plan.hub, ray.foot)
+                    for plan in plans for ray in plan.rays]
+    mean_radius = float(np.mean([ray.radius for plan in plans for ray in plan.rays]))
+    relaxation = relax(graph, radial_paths, mean_radius)
+    records, beads, rest = emit(graph)
+    data = write_silk(specs[0].width, specs[0].height, len(plans), records, beads)
+    timing = pace(records, specs[0].duration)
+    metrics = [_orb_metrics(graph, plan) for plan in plans]
+    metadata = {
+        "kind": "orb", "golden": specs[0].golden,
+        "orbs": [{"builder": plan.builder_index, "hub": list(graph.position(plan.hub)),
+                  "frame": [list(graph.position(anchor)) for anchor in plan.anchors],
+                  "radii": [list(graph.position(ray.foot)) for ray in plan.rays],
+                  "openSectors": [list(s) for s in plan.spec.open_sectors],
+                  "radialGapCV": metrics[i][0], "spacingCV": metrics[i][1],
+                  "turnbacks": plan.turnbacks}
+                 for i, plan in enumerate(plans)],
+        "timeline": timing["timeline"], "stages": timing["stages"],
+        "rests": {i: (pose["x"], pose["y"]) for i, pose in rest.items()},
+        "catalogueBytes": len(data), "indexBytes": 0,
+        "defaultBytes": len(data) if specs[0].id == "st-andrews-cross" else 0,
+    }
+    validate(data, metadata)
     return OrbResult(data, records, beads, metadata, rest, graph, relaxation,
-                     turnbacks, turnback_locations, radial_gap_cv, spacing_cv, timing["envFraction"])
+                     sum(plan.turnbacks for plan in plans),
+                     [location for plan in plans for location in plan.turnback_locations],
+                     float(np.mean([pair[0] for pair in metrics])),
+                     float(np.mean([pair[1] for pair in metrics])),
+                     timing["envFraction"])
+
+
+def build_orb(spec: OrbParameters) -> OrbResult:
+    graph = PlanGraph()
+    seed = zlib.crc32(spec.id.encode("utf-8"))
+    anchors, first = orb_scaffold(
+        graph, spec.polygon, np.random.default_rng(seed ^ 0x9E3779B9), spec.branches)
+    plan = _plan_orb(spec, graph, anchors, first, 0)
+    return _finish_orbs((spec,), graph, [plan])
+
+
+def build_colony(specs: tuple[OrbParameters, ...],
+                 shared_anchors: tuple[int | None, ...]) -> OrbResult:
+    """Build scaffold first, then each orb sequentially on one pre-split graph."""
+    if len(specs) != 3 or len(shared_anchors) != 3 or shared_anchors[0] is not None:
+        raise ValueError("the colony needs three sequential orbs and two shared anchors")
+    graph = PlanGraph()
+    scaffold = []
+    for spec in specs:
+        seed = zlib.crc32(spec.id.encode("utf-8"))
+        scaffold.append(orb_scaffold(
+            graph, spec.polygon, np.random.default_rng(seed ^ 0x9E3779B9), spec.branches))
+    plans = []
+    for index, (spec, (anchors, first)) in enumerate(zip(specs, scaffold)):
+        if shared_anchors[index] is not None:
+            anchor_index = shared_anchors[index]
+            point = spec.polygon[anchor_index]
+            attached = None
+            for previous in plans:
+                for frame in previous.frame_threads:
+                    try:
+                        attached = graph.attach(frame, point)
+                    except ValueError:
+                        continue
+                    else:
+                        break
+                if attached is not None:
+                    break
+            if attached is None:
+                raise ValueError("shared colony anchor must lie on an earlier live frame")
+            anchors[anchor_index] = attached
+        plans.append(_plan_orb(spec, graph, anchors, first, index))
+    return _finish_orbs(specs, graph, plans)

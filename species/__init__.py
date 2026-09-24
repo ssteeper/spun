@@ -1,5 +1,5 @@
 """Registered species modules are named for their eventual .silk stems."""
 
-from .hortophora import build, SPEC
+from . import argiope, golden, hortophora
 
-SPECIES = {SPEC.id: build}
+SPECIES = {module.SPEC.id: module.build for module in (golden, argiope, hortophora)}
