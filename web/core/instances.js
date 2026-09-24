@@ -42,9 +42,12 @@ function builderRange(data) {
 }
 
 export class InstanceManager {
-  constructor({ stage, renderer, overlay, onStatus = () => {}, onReady = () => {} }) {
+  constructor({ stage, renderers, backend = "2d", overlay, onStatus = () => {}, onReady = () => {}, onBackend = () => {} }) {
     this.stage = stage;
-    this.renderer = renderer;
+    this.renderers = renderers;
+    this.onBackend = onBackend;
+    this.backend = renderers[backend] ? backend : "2d";
+    this.renderer = renderers[this.backend];
     this.overlay = overlay;
     this.onStatus = onStatus;
     this.onReady = onReady;
@@ -58,7 +61,6 @@ export class InstanceManager {
     this.lastTimestamp = null;
     this.frozen = false;
     this.mode = "dusk";
-    this.backend = "2d";
     this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", event => {
       this.reducedMotion = event.matches;
@@ -129,7 +131,7 @@ export class InstanceManager {
     this.place(instance);
     if (this.instances.length === INSTANCE_LIMIT) {
       const removed = this.instances.shift();
-      this.renderer.invalidate(removed);
+      this.renderers["2d"].invalidate(removed);
     }
     this.instances.push(instance);
     this.frozen = false;
@@ -181,7 +183,7 @@ export class InstanceManager {
       detail: Math.max(1e-3, Math.min(1, scale / ideal)),
       screenBounds: { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) },
     };
-    if (instance.buffers) this.renderer.invalidate(instance);
+    if (instance.buffers) this.renderers["2d"].invalidate(instance);
   }
 
   resize() {
@@ -271,8 +273,11 @@ export class InstanceManager {
   }
 
   setBackend(value) {
-    if (value !== "2d") return false;
-    this.backend = "2d";
+    if (!this.renderers[value]) return false;
+    if (value === this.backend) return true;
+    this.backend = value;
+    this.renderer = this.renderers[value];
+    this.onBackend(value);
     this.requestFrame();
     return true;
   }
@@ -297,12 +302,12 @@ export class InstanceManager {
       instances: this.instances.length,
       rafActive: this.rafActive,
       framesRendered: this.framesRendered,
-      glBufferUploadsLastFrame: 0,
-      glBufferUploadsTotal: 0,
+      glBufferUploadsLastFrame: this.renderers.gl?.glBufferUploadsLastFrame ?? 0,
+      glBufferUploadsTotal: this.renderers.gl?.glBufferUploadsTotal ?? 0,
       recordsDrawnLastFrame: this.renderer.recordsDrawnLastFrame,
       temporaryRecordsDrawnLastFrame: this.renderer.temporaryRecordsDrawnLastFrame,
       beadsDrawnLastFrame: this.renderer.beadsDrawnLastFrame,
-      glRenderer: null,
+      glRenderer: this.renderers.gl?.rendererName ?? null,
       decodedCounts: Object.fromEntries([...this.assets].filter(([, data]) => !(data instanceof Promise)).map(([id, data]) => [id, { segments: data.count, beads: data.beadCount }])),
       cursors: this.instances.map(instance => ({ id: instance.specimen.id, cursor: instance.cursor, elapsed: instance.elapsed, label: instance.label })),
       placements: this.instances.map(instance => ({

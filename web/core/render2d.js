@@ -55,20 +55,21 @@ export class Renderer2D {
       if (!instance.buffers || instance.buffers.invalid) this.createBuffers(instance);
       this.updatePermanent(instance);
       this.drawDynamic(instance);
-      const rect = instance.placement.screenBounds;
-      ctx.drawImage(instance.buffers.permanent, rect.left, rect.top, rect.width, rect.height);
-      ctx.drawImage(instance.buffers.dynamic, rect.left, rect.top, rect.width, rect.height);
+      const { permanent, dynamic, deviceLeft, deviceTop } = instance.buffers;
+      const dpr = this.stage.dpr;
+      ctx.drawImage(permanent, deviceLeft / dpr, deviceTop / dpr, permanent.width / dpr, permanent.height / dpr);
+      ctx.drawImage(dynamic, deviceLeft / dpr, deviceTop / dpr, dynamic.width / dpr, dynamic.height / dpr);
     }
     if (!this.glowEnabled) return;
     for (const instance of instances) {
       if (!instance.buffers.glowUsable) continue;
       this.updateGlow(instance);
-      const rect = instance.placement.screenBounds;
-      const pad = instance.buffers.glowPad * 2 / this.stage.dpr;
+      const { glow, glowPad, deviceLeft, deviceTop } = instance.buffers;
+      const dpr = this.stage.dpr;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = (this.stageConfig?.glow?.strength ?? 0.5) * (instance.mode === "dawn" ? 1.2 : 1);
-      ctx.drawImage(instance.buffers.glow, rect.left - pad, rect.top - pad, rect.width + pad * 2, rect.height + pad * 2);
+      ctx.drawImage(glow, (deviceLeft - glowPad * 2) / dpr, (deviceTop - glowPad * 2) / dpr, glow.width * 2 / dpr, glow.height * 2 / dpr);
       ctx.restore();
     }
   }
@@ -76,10 +77,13 @@ export class Renderer2D {
   createBuffers(instance) {
     const { dpr } = this.stage;
     const rect = instance.placement.screenBounds;
-    const pixelWidth = Math.max(1, Math.ceil(rect.width * dpr));
-    const pixelHeight = Math.max(1, Math.ceil(rect.height * dpr));
-    const glowWidth = Math.ceil(pixelWidth / 2);
-    const glowHeight = Math.ceil(pixelHeight / 2);
+    // Snap to whole device pixels (plus 2 px for round caps) so layers composite without resampling.
+    const deviceLeft = Math.floor(rect.left * dpr) - 2;
+    const deviceTop = Math.floor(rect.top * dpr) - 2;
+    const pixelWidth = Math.ceil(((rect.left + rect.width) * dpr + 2 - deviceLeft) / 2) * 2;
+    const pixelHeight = Math.ceil(((rect.top + rect.height) * dpr + 2 - deviceTop) / 2) * 2;
+    const glowWidth = pixelWidth / 2;
+    const glowHeight = pixelHeight / 2;
     const radius = this.stageConfig?.glow?.radius ?? 14;
     const glowPad = Math.ceil(3 * radius * 0.5 * dpr);
     const permanent = makeCanvas(pixelWidth, pixelHeight);
@@ -91,8 +95,8 @@ export class Renderer2D {
     const combinedCtx = combined.getContext("2d");
     const glowCtx = glow.getContext("2d");
     const linear = instance.placement.scale * dpr;
-    const tx = (instance.placement.originX - rect.left) * dpr;
-    const ty = (instance.placement.originY - rect.top) * dpr;
+    const tx = instance.placement.originX * dpr - deviceLeft;
+    const ty = instance.placement.originY * dpr - deviceTop;
     for (const layerCtx of [permanentCtx, dynamicCtx]) layerCtx.setTransform(linear, 0, 0, linear, tx, ty);
     combinedCtx.setTransform(1, 0, 0, 1, 0, 0);
     glowCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -103,7 +107,7 @@ export class Renderer2D {
       dynamicCursor: NaN,
       glowUsable: "filter" in glowCtx,
       glowCursor: NaN,
-      glowPad,
+      glowPad, deviceLeft, deviceTop,
       glowWidth,
       glowHeight,
       invalid: false,
@@ -208,7 +212,7 @@ export class Renderer2D {
 
   drawBead(ctx, instance, index, progress, recordAlpha = 1) {
     const data = instance.data;
-    const radius = data.beadRadii[index] * instance.placement.scale;
+    const radius = data.beadRadii[index];
     if (radius <= 0) return false;
     const x = data.beadX[index];
     const y = data.beadY[index];
@@ -223,16 +227,19 @@ export class Renderer2D {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = alpha * recordAlpha * 0.85;
+    // Rim follows the hairline coverage rule: diameter max(w_px, 1), alpha × min(w_px, 1).
+    const deviceScale = instance.placement.scale * this.stage.dpr;
+    const rimPx = r * 0.12 * deviceScale;
+    ctx.globalAlpha = alpha * recordAlpha * 0.85 * Math.min(rimPx, 1);
     ctx.strokeStyle = "rgba(255,255,255,.86)";
-    ctx.lineWidth = Math.max(0.35 / this.stage.dpr, r * 0.12);
+    ctx.lineWidth = Math.max(rimPx, 1) / deviceScale;
     ctx.beginPath();
     ctx.arc(x, y, r * 0.85, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = alpha * recordAlpha;
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.arc(x - r * 0.35, y - r * 0.35, Math.max(0.2, r * 0.28), 0, Math.PI * 2);
+    ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.28, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     return true;

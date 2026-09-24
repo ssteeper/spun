@@ -1,8 +1,9 @@
 export class Stage {
-  constructor(stageElement, webCanvas, overlayCanvas, onResize = () => {}) {
+  constructor(stageElement, webCanvas, overlayCanvas, glCanvas, onResize = () => {}) {
     this.element = stageElement;
     this.canvas = webCanvas;
     this.overlayCanvas = overlayCanvas;
+    this.glCanvas = glCanvas;
     this.ctx = webCanvas.getContext("2d", { alpha: true });
     this.overlayCtx = overlayCanvas.getContext("2d", { alpha: true });
     if (!this.ctx || !this.overlayCtx) throw new Error("Canvas2D is unavailable");
@@ -28,7 +29,7 @@ export class Stage {
     this.dpr = dpr;
     const pixelWidth = Math.max(1, Math.round(width * dpr));
     const pixelHeight = Math.max(1, Math.round(height * dpr));
-    for (const canvas of [this.canvas, this.overlayCanvas]) {
+    for (const canvas of [this.canvas, this.overlayCanvas, this.glCanvas]) {
       if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
       if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
     }

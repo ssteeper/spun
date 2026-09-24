@@ -33,6 +33,7 @@
       <button class="clear-button" id="clear-button" type="button">Clear <kbd>Esc</kbd></button>
     </header>
     <section class="stage" id="stage" aria-label="Web building stage">
+      <canvas id="gl-canvas" class="inactive" aria-hidden="true"></canvas>
       <canvas id="web-canvas" tabindex="0" aria-label="A dark stage where spider webs are planted and built. Click or tap to plant the selected spider web; press Enter or Space while focused to plant at the centre. Press Escape to clear."></canvas>
       <canvas id="overlay-canvas" aria-hidden="true"></canvas>
       <p class="stage-hint" id="stage-hint">Choose a species, then click anywhere to plant.</p>

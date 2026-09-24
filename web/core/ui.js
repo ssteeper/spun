@@ -1,13 +1,16 @@
 function makeRadioGroup(element, onChange) {
   const buttons = [...element.querySelectorAll('[role="radio"]')];
   const enabled = () => buttons.filter(button => !button.disabled);
-  function select(button, focus = false) {
-    if (!button || button.disabled) return;
+  function mark(button) {
     for (const option of buttons) {
       const selected = option === button;
       option.setAttribute("aria-checked", String(selected));
       option.tabIndex = selected ? 0 : -1;
     }
+  }
+  function select(button, focus = false) {
+    if (!button || button.disabled) return;
+    mark(button);
     onChange(button.dataset.value);
     if (focus) button.focus();
   }
@@ -27,7 +30,7 @@ function makeRadioGroup(element, onChange) {
       }
     });
   }
-  return { select, buttons };
+  return { select, mark, buttons };
 }
 
 function commonName(name) {
@@ -46,7 +49,7 @@ const CHIP_LABELS = Object.freeze({
 });
 
 export class ViewerUI {
-  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup, backendGroup }, { onSelect, onClear }) {
+  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup, backendGroup }, { onSelect, onClear, onBackend = () => {} }) {
     this.rows = rows;
     this.status = status;
     this.liveStatus = liveStatus;
@@ -59,10 +62,17 @@ export class ViewerUI {
     this.liveTimer = 0;
     clearButton.addEventListener("click", onClear);
     this.modeGroup = makeRadioGroup(modeGroup, () => {});
-    this.backendGroup = makeRadioGroup(backendGroup, () => {});
+    this.backendGroup = makeRadioGroup(backendGroup, value => onBackend(value));
     window.addEventListener("keydown", event => {
       if (event.key === "Escape") onClear();
     });
+  }
+
+  setBackendState(glAvailable, backend) {
+    const buttons = this.backendGroup.buttons;
+    const gl = buttons.find(button => button.dataset.value === "gl");
+    gl.disabled = !glAvailable;
+    this.backendGroup.mark(buttons.find(button => button.dataset.value === backend) || buttons[0]);
   }
 
   renderSpecimens(specimens, selectedId) {
