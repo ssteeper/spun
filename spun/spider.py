@@ -18,7 +18,7 @@ _ANATOMY = {
     "christmas-jewel-spider": (8, 2.0, "hub-rest", "#17191d", "#1d1e22", "#93918d", "#edcb62", 1.24),
     "scorpion-tailed-spider": (16, 1.6, "hub-tail", "#ae884d", "#c49a5d", "#856235", None, 1.10),
     "net-casting-spider": (25, 1.0, "net", "#80684e", "#624d3b", "#61503e", None, 1.35),
-    "magnificent-spider": (14, 1.0, "hanging", "#eee3c4", "#dbc8ae", "#b89985", "#dca0a2", 1.30),
+    "magnificent-spider": (14, 1.0, "hanging", "#eee3c4", "#dbc8ae", "#b89985", "#dca0a2", 1.50),
     "redback-spider": (10, 1.8, "retreat", "#15151b", "#1a1920", "#776c75", None, 1.25),
 }
 
@@ -40,10 +40,13 @@ def _body(species_id, length, carapace, abdomen):
     abdomen_ry = .105 if slender else .25 if compact else .19
     if species_id == "golden-orb-weaver":
         abdomen_ry = .14
+    abdomen_rx = .35 if species_id == "magnificent-spider" else .31 if compact else .29
+    if species_id == "magnificent-spider":
+        abdomen_ry = .35
     body = [
-        _ellipse(back, 0, (.31 if compact else .29)*length,
+        _ellipse(back, 0, abdomen_rx*length,
                  abdomen_ry*length, abdomen, "#271f20", .04*length),
-        _ellipse(.76*length, 0, .21*length, (.085 if slender else .14)*length, carapace,
+        _ellipse(.76*length, 0, .21*length, .14*length, carapace,
                  "#35292a", .036*length),
         _ellipse(.90*length, -.048*length, .065*length, .065*length,
                  "#e8dfcc" if species_id == "magnificent-spider" else carapace),
@@ -84,11 +87,15 @@ def _body(species_id, length, carapace, abdomen):
         body.append(_ellipse(.37*length, 0, .22*length, .075*length, "#45392f"))
         body.append(_ellipse(.78*length, 0, .155*length, .055*length, "#a48966"))
     elif species_id == "magnificent-spider":
-        for x, y, r, colour in ((.20,-.10,.055,"#dc9da4"),(.41,.11,.065,"#eac46b"),
-                                 (.50,-.075,.04,"#d996a4"),(.71,.08,.035,"#d9ab68")):
+        for x, y, r, colour in ((.11,-.12,.06,"#dc9da4"),(.23,.10,.08,"#eac46b"),
+                                 (.33,-.03,.065,"#d996a4"),(.43,.15,.055,"#e8bd70"),
+                                 (.48,-.17,.05,"#dc9da4"),(.71,.08,.035,"#d9ab68")):
             body.append(_ellipse(x*length,y*length,r*length,r*length,colour))
-        for x in (.12, .30, .48):
-            body.append(_ellipse(x*length,-.19*length,.046*length,.055*length,"#e9cfb5"))
+        for x, base, apex in ((.10,-.27,-.44),(.27,-.34,-.52),(.44,-.27,-.45)):
+            body.append(_polygon([[(x-.065)*length,base*length],
+                                  [x*length,apex*length],
+                                  [(x+.07)*length,base*length]],
+                                 "#f4d9bc", "#956f60", .018*length))
     elif species_id == "redback-spider":
         body.extend((_ellipse(.28*length, -.07*length, .18*length, .045*length, "#42404b", alpha=.65),
                      _polygon([[.06*length, -.018*length], [.49*length, -.025*length],
@@ -96,8 +103,19 @@ def _body(species_id, length, carapace, abdomen):
     return body
 
 
-def _legs(length, span):
+def _legs(length, span, species_id=None):
     legs = []
+    if species_id == "magnificent-spider":
+        # Eight squat, heavy limbs close to the rounded abdomen; total span
+        # across the tarsi is 1.5 body lengths, not a pholcid-like star.
+        for side in (-1,1):
+            for i in range(4):
+                legs.append([
+                    [(.82,.75,.64,.50)[i]*length,side*(.15,.20,.23,.20)[i]*length],
+                    [(1.01,.91,.43,.22)[i]*length,side*(.35,.38,.40,.32)[i]*length],
+                    [(1.10,.94,.39,.07)[i]*length,side*(.58,.59,.64,.53)[i]*length],
+                    [(1.05,.85,.33,-.04)[i]*length,side*(.73,.71,.75,.63)[i]*length]])
+        return legs
     # Three articulated segments: femur out/forward, tibia out, tarsus inward.
     for side in (-1, 1):
         for i in range(4):
@@ -113,7 +131,7 @@ def _legs(length, span):
 
 
 def _rest_legs(species_id, length, span):
-    legs = _legs(length, span)
+    legs = _legs(length, span, species_id)
     if species_id == "st-andrews-cross":
         # Legs I+II, III+IV pair along the upper/lower arms of a hub X.
         for j, leg in enumerate(legs):
@@ -143,7 +161,7 @@ def _rest_legs(species_id, length, span):
     elif species_id == "magnificent-spider":
         # Left leg II touches the bolas filament at (0,+8) from the spinnerets.
         leg = legs[1]
-        leg[1], leg[2], leg[3] = [length*.52, -length*.42], [length*.14, 0], [0,8]
+        leg[1], leg[2], leg[3] = [length*.56, -length*.33], [length*.20, -length*.07], [0,8]
     elif species_id == "redback-spider":
         for leg in legs:
             for joint in leg[1:]:
@@ -156,7 +174,7 @@ def _rest_legs(species_id, length, span):
 def glyph(species_id: str) -> dict:
     """Return C4 data. Do not mutate this cached geometry."""
     length, scale, pose, carapace, abdomen, leg_colour, band, span = _ANATOMY[species_id]
-    legs = _legs(length, span)
+    legs = _legs(length, span, species_id)
     stride = max(2., length*.24)
     gait = []
     for frame in range(8):
@@ -187,8 +205,10 @@ def glyph(species_id: str) -> dict:
             y=side*.074*length
             eyes.append(dict(x=.925*length,y=y,r=.019*length,
                              fill="#ddd8c7",glint=dict(x=.919*length,y=y-.007*length,r=.006*length)))
+    widths=([.105*length,.075*length,.028*length] if species_id=="magnificent-spider"
+            else [.041*length,.028*length,.012*length])
     return dict(scale=scale, strideMm=stride,
-                legs=dict(color=leg_colour, band=band, width=[.041*length,.028*length,.012*length]),
+                legs=dict(color=leg_colour, band=band, width=widths),
                 body=_body(species_id,length,carapace,abdomen), eyes=eyes,
                 gait=gait, rest=_rest_legs(species_id,length,span),
                 restVisible=dict(body=pose!="in-leaf",eyes=pose!="in-leaf",

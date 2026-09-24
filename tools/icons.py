@@ -2,7 +2,6 @@
 
 from pathlib import Path
 import sys
-from xml.sax.saxutils import escape
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -61,16 +60,41 @@ def _png(rows,size,maskable):
 
 
 def _svg(rows):
-    size=128
-    selected=rows[::3]
-    mapped=_project(selected,size,False)
+    # The 16 px icon wants the source orb's *structure*, not every microscopic
+    # turn. Keep intact capture turns: skipping their internal vertices cuts
+    # across the spiral instead of following it.
+    mapped=_project(rows,128,False)
     lines=['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">',
-           '<rect width="128" height="128" fill="#05060c"/>',
-           '<g fill="none" stroke-linecap="round">']
-    for row in mapped:
-        rgb=f'#{int(row["r"]):02x}{int(row["g"]):02x}{int(row["b"]):02x}'
-        lines.append(f'<path d="M{int(row["x0"])/4:.2f} {int(row["y0"])/4:.2f}L{int(row["x1"])/4:.2f} {int(row["y1"])/4:.2f}" stroke="{escape(rgb)}" stroke-width="{max(.55,int(row["width"])/32):.2f}" opacity="{int(row["alpha"])/255:.2f}"/>')
-    lines.extend(('</g>','</svg>'))
+           '<rect width="128" height="128" fill="#05060c"/>']
+    for name,keep,step,stroke in (("FRAME",1,2,1.5),("RADIUS",1,8,1.10),
+                                  ("HUB",1,4,1.6),("CAPTURE",2,1,1.0)):
+        selected=mapped[mapped["kind"]==BY_NAME[name].id]
+        commands=[]
+        begin=0
+        run_number=0
+        for end in range(1,len(selected)+1):
+            if (end<len(selected) and selected[end-1]["x1"]==selected[end]["x0"]
+                    and selected[end-1]["y1"]==selected[end]["y0"]):
+                continue
+            if run_number%keep==0:
+                run=selected[begin:end]
+                first=run[0]
+                commands.append(f'M{int(first["x0"])/4:.1f} {int(first["y0"])/4:.1f}')
+                for row in run[step-1::step]:
+                    commands.append(f'L{int(row["x1"])/4:.1f} {int(row["y1"])/4:.1f}')
+                last=run[-1]
+                final=f'L{int(last["x1"])/4:.1f} {int(last["y1"])/4:.1f}'
+                if not commands[-1]==final:
+                    commands.append(final)
+            run_number+=1
+            begin=end
+        first=selected[0]
+        rgb=f'#{int(first["r"]):02x}{int(first["g"]):02x}{int(first["b"]):02x}'
+        alpha=int(first["alpha"])/255
+        lines.append(f'<path d="{"".join(commands)}" fill="none" stroke="{rgb}" '
+                     f'stroke-width="{stroke:.2f}" stroke-opacity="{alpha:.2f}" '
+                     'stroke-linecap="round" stroke-linejoin="round"/>')
+    lines.append('</svg>')
     return ('\n'.join(lines)+'\n').encode('utf-8')
 
 

@@ -75,3 +75,14 @@ def test_deinopis_net_held_at_convex_corners():
     assert glyph("magnificent-spider")["rest"][1][-1] == [0,8]
     assert glyph("leaf-curling-spider")["restVisible"] == {
         "body": False, "eyes": False, "legFromJoint": 2}
+
+
+def test_ordgarius_has_a_stout_near_body_leg_span():
+    spider = glyph("magnificent-spider")
+    body_length = 14
+    y_positions = [joint[1] for leg in spider["rest"] for joint in leg]
+    span = max(y_positions) - min(y_positions)
+    assert 1.3*body_length <= span <= 1.6*body_length
+    assert spider["legs"]["width"][0] >= body_length*.09
+    abdomen = spider["body"][0]
+    assert .9 <= abdomen["rx"]/abdomen["ry"] <= 1.1
