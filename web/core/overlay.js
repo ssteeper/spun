@@ -52,8 +52,7 @@ export class SpiderOverlay {
     const y = data.coords[p + 1] + (data.coords[p + 3] - data.coords[p + 1]) * local;
     const angle = Math.atan2(data.coords[p + 3] - data.coords[p + 1], data.coords[p + 2] - data.coords[p]);
     const placement = instance.placement;
-    const originX = placement.x - specimen.anchor.x * placement.scale;
-    const originY = placement.y - specimen.anchor.y * placement.scale;
+    const { originX, originY } = placement;
     const distanceEnd = data.cumulativeLength[record];
     const distance = completed ? data.builderLengths[builder] : distanceEnd - data.lengths[record] + data.lengths[record] * local;
     const glyph = spider.glyph;

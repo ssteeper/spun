@@ -55,7 +55,6 @@ export class InstanceManager {
     this.manifest = null;
     this.assets = new Map();
     this.instances = [];
-    this.nextId = 1;
     this.rafActive = false;
     this.rafId = 0;
     this.framesRendered = 0;
@@ -110,7 +109,6 @@ export class InstanceManager {
     const data = await this.load(specimen);
     const builderInfo = data.builderInfo;
     const instance = {
-      instanceId: this.nextId++,
       specimen,
       data,
       elapsed: 0,
@@ -181,7 +179,7 @@ export class InstanceManager {
     const right = originX + bounds.maxX * scale;
     const bottom = originY + bounds.maxY * scale;
     instance.placement = {
-      x, y, anchorX: x, anchorY: y, originX, originY, scale,
+      anchorX: x, anchorY: y, originX, originY, scale,
       idealScale: ideal,
       detail: Math.max(1e-3, Math.min(1, scale / ideal)),
       screenBounds: { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) },

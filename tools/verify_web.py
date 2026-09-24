@@ -735,6 +735,105 @@ def check_performance(h: Harness):
         ctx.close()
 
 
+CONTRAST_JS = """() => {
+  const parse = c => { const m = c.match(/rgba?\\(([^)]+)\\)/); if (!m) return [0, 0, 0, 0];
+    const v = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v.length > 3 ? v[3] : 1]; };
+  const over = (top, under) => { const a = top[3] + under[3] * (1 - top[3]);
+    return a === 0 ? [0, 0, 0, 0] : [0, 1, 2].map(i => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a).concat([a]); };
+  const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const background = el => { const layers = [];
+    for (let n = el; n; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor);
+      if (c[3] > 0) layers.push(c); if (c[3] >= 1) break; }
+    let bg = [5, 6, 12, 1]; for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg); return bg; };
+  const selector = el => el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\\s+/).join('.') : '');
+  const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+    if (el.closest('.sr-only, [hidden]') || el.closest('button:disabled')) continue;
+    const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    if (!r.width || !r.height || cs.visibility === 'hidden' || cs.display === 'none') continue;
+    let op = 1; for (let n = el; n; n = n.parentElement) op *= Number(getComputedStyle(n).opacity);
+    if (op < 0.05) continue;
+    const bg = background(el); const fg = over(parse(cs.color), bg);
+    const a = lum(fg), b = lum(bg); const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    out.push({ selector: selector(el), text: el.textContent.trim().slice(0, 30), ratio: Math.round(ratio * 100) / 100 });
+  }
+  return out.sort((x, y) => x.ratio - y.ratio);
+}"""
+
+
+def check_accessibility(h: Harness):
+    numbers, evidence, ok = {}, [], True
+    ctx, page, log = h.context()
+    try:
+        page.wait_for_timeout(400)  # let colour transitions (0.15 s) settle
+        rows = page.evaluate(CONTRAST_JS)
+        page.goto(f"{h.base}/offline.html")
+        rows += [dict(r, selector="offline.html " + r["selector"]) for r in page.evaluate(CONTRAST_JS)]
+        h.open(page, "debug=1&nosw=1")
+        rows.sort(key=lambda r: (r["ratio"], r["selector"]))
+        failing = [r for r in rows if r["ratio"] < 4.5]
+        numbers["contrast"] = {"elements": len(rows), "min": rows[0] if rows else None, "below4_5": failing}
+        ok &= bool(rows) and not failing
+        groups = page.evaluate("""() => [...document.querySelectorAll('[role=radiogroup]')].map(g => {
+          const radios = [...g.querySelectorAll('[role=radio]')];
+          return { label: g.getAttribute('aria-label'), radios: radios.length, tabZero: radios.filter(r => r.tabIndex === 0).length };
+        })""")
+        roving = {}
+        for gid in ("species-rows", "mode-group", "backend-group"):
+            page.focus(f"#{gid} [role=radio][tabindex='0']")
+            page.keyboard.press("End")
+            end = page.evaluate("document.activeElement.textContent.trim()")
+            page.keyboard.press("Home")
+            home = page.evaluate("document.activeElement.textContent.trim()")
+            roving[gid] = {"end": end, "home": home}
+        page.evaluate("window.__spun.setBackend('2d'); window.__spun.setMode('dusk')")
+        h.open(page, "debug=1&nosw=1")
+        numbers["radiogroups"] = groups
+        numbers["homeEnd"] = roving
+        ok &= len(groups) >= 3 and all(g["tabZero"] == 1 and g["radios"] > 1 for g in groups)
+        ok &= all(v["end"] != v["home"] for v in roving.values())
+        rings = {}
+        for target, check in (("chip", "document.activeElement?.classList.contains('chip')"), ("stage", "document.activeElement?.id === 'web-canvas'")):
+            for _ in range(30):
+                page.keyboard.press("Tab")
+                if page.evaluate(check):
+                    break
+            rings[target] = page.evaluate("""() => { const cs = getComputedStyle(document.activeElement);
+              return { focused: document.activeElement.id || document.activeElement.className, outline: cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0, boxShadow: cs.boxShadow !== 'none' }; }""")
+        numbers["focusRing"] = rings
+        ok &= all(r["outline"] or r["boxShadow"] for r in rings.values())
+        aria = page.evaluate("""() => { const live = document.querySelector('[aria-live]'); const c = document.querySelector('#web-canvas');
+          return { live: live?.getAttribute('aria-live'), canvasTabIndex: c.tabIndex, canvasLabel: Boolean(c.getAttribute('aria-label')),
+                   globals: Object.keys(window).filter(k => k.startsWith('__')) }; }""")
+        numbers["aria"] = aria
+        ok &= aria["live"] == "polite" and aria["canvasTabIndex"] == 0 and aria["canvasLabel"]
+        layout = {}
+        for width in (1280, 1100, 720, 390):
+            page.set_viewport_size({"width": width, "height": 800})
+            page.wait_for_timeout(100)
+            layout[str(width)] = page.evaluate("""() => { const bar = document.querySelector('.topbar'); const title = document.querySelector('.brand-title');
+              const rows = getComputedStyle(bar).gridTemplateRows.split(' ').filter(Boolean).length;
+              const lineHeight = parseFloat(getComputedStyle(title).lineHeight) || parseFloat(getComputedStyle(title).fontSize);
+              const groups = [...bar.children].filter(c => !c.matches('.brand, .status-pill')).length;
+              return { scrollWidth: document.documentElement.scrollWidth, viewport: innerWidth, headerRows: rows,
+                       headerHeight: Math.round(bar.getBoundingClientRect().height), brandTitleLines: Math.round(title.getBoundingClientRect().height / lineHeight),
+                       controlGroups: groups }; }""")
+        numbers["layout"] = layout
+        ok &= all(v["scrollWidth"] <= v["viewport"] and v["controlGroups"] <= 4 for v in layout.values())
+        ok &= all(layout[w]["headerRows"] == 1 and layout[w]["brandTitleLines"] == 1 for w in ("1280", "1100"))
+        page.set_viewport_size({"width": 1280, "height": 800})
+        page.screenshot(path=str(OUT / "layout-1280.png")); evidence.append("layout-1280.png")
+        page.goto(f"{h.base}/?nosw=1")
+        page.wait_for_load_state("load")
+        numbers["debugGlobalWithoutFlag"] = page.evaluate("'__spun' in window")
+        ok &= not numbers["debugGlobalWithoutFlag"] and not log["errors"]
+        return ok, numbers, evidence
+    finally:
+        ctx.close()
+
+
 CHECKS = [
     ("cold-load", "Cold load", check_cold_load),
     ("all-species", "All species, both backends", check_all_species),
@@ -751,6 +850,7 @@ CHECKS = [
     ("offline", "Offline", check_offline),
     ("mobile", "Mobile 390x844", check_mobile),
     ("keyboard", "Keyboard", check_keyboard),
+    ("accessibility", "Accessibility and layout", check_accessibility),
     ("performance", "Performance (12 growing webs)", check_performance),
 ]
 

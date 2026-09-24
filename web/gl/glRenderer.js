@@ -14,7 +14,7 @@ function hexColor(value, fallback) {
 }
 
 // Two or more passes of sigma/√passes reproduce a Gaussian of sigma while each pass stays within ±12 texels at 2.4σ.
-export function blurKernel(sigma) {
+function blurKernel(sigma) {
   const passes = Math.max(2, Math.ceil((sigma * 2.4 / REACH) ** 2));
   const s = sigma / Math.sqrt(passes);
   const g = x => Math.exp(-(x * x) / (2 * s * s));
@@ -125,8 +125,6 @@ export class GLRenderer {
   setGlow(enabled) {
     this.glowEnabled = Boolean(enabled);
   }
-
-  invalidate() {}
 
   countUpload() {
     this.glBufferUploadsLastFrame++;

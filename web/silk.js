@@ -149,8 +149,8 @@ export function labelAt(specimen, cursor, count = specimen?.segments ?? 0) {
 }
 
 // Dew bead growth (0..1, ease-out cubic): starts at 2.4 s·u and grows over 0.35 s.
-export const DEW_DELAY = 2.4;
-export const DEW_GROW = 0.35;
+const DEW_DELAY = 2.4;
+const DEW_GROW = 0.35;
 export function dewProgress(age, u) {
   const t = Math.max(0, Math.min(1, (age - DEW_DELAY * u) / DEW_GROW));
   return 1 - (1 - t) ** 3;

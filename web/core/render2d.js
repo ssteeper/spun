@@ -31,8 +31,6 @@ export class Renderer2D {
     this.recordsDrawnLastFrame = 0;
     this.beadsDrawnLastFrame = 0;
     this.temporaryRecordsDrawnLastFrame = 0;
-    this.glBufferUploadsLastFrame = null;
-    this.glBufferUploadsTotal = null;
   }
 
   setGlow(enabled) {
