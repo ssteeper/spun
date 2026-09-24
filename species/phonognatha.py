@@ -82,25 +82,24 @@ def _leaf_retreat(builder, rays, hub, anchors, rng, spec, frames):
     return rest
 
 
-# A forked sapling: the trunk splits into two limbs that cradle the orb and a
-# crossing twig carries the bridge.
+# A sapling leans in from the lower left and curves up the right-hand side; one
+# crossing twig runs across the top. The left side is open air: the orb's left
+# side holds only one short twig poking in from the edge.
 BRANCHES = (
     BranchSpec(
-        controls=((640, 1600), (600, 1400), (420, 1330), (260, 1210), (100, 960),
-                  (80, 640), (170, 420)),
-        anchors=((6, (494, 1292)), (7, (281, 1168)), (8, (136, 943)), (9, (130, 637)),
-                 (10, (188, 456))),
-        leaves=((0.97, 86, -1.4), (0.52, 90, 2.9))),
+        controls=((140, 1600), (250, 1260), (560, 1300), (820, 1220), (1010, 1020),
+                  (1085, 720), (1060, 440)),
+        anchors=((2, (988, 517)), (3, (1090, 700)), (4, (1040, 1000)), (5, (840, 1220)),
+                 (6, (560, 1318)), (7, (285, 1190))),
+        leaves=((0.99, 86, -1.2), (0.30, 90, 2.6))),
     BranchSpec(
-        controls=((660, 1600), (700, 1400), (860, 1300), (1030, 1110), (1120, 820),
-                  (1100, 560), (1000, 420)),
-        anchors=((5, (815, 1256)), (4, (1004, 1050)), (3, (1064, 682)), (2, (946, 451))),
-        leaves=((0.36, 92, 0.5), (0.97, 84, -2.4))),
+        controls=((1180, 250), (900, 300), (620, 322), (340, 362), (170, 420), (110, 470)),
+        anchors=((0, (340, 362)), (1, (720, 316)), (9, (150, 548))),
+        leaves=((0.12, 88, -1.4), (0.55, 80, -2.0), (0.99, 84, 2.6))),
     BranchSpec(
-        controls=((1150, 330), (950, 290), (737, 300), (500, 300), (282, 320),
-                  (120, 360)),
-        anchors=((0, (282, 344)), (1, (737, 328))),
-        leaves=((0.08, 88, -0.4), (0.62, 80, -2.0))),
+        controls=((0, 930), (45, 900), (90, 860), (128, 818)),
+        anchors=((8, (122, 826)),),
+        leaves=((0.6, 80, 2.2),)),
 )
 
 SPEC = OrbParameters(
