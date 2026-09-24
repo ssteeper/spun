@@ -262,9 +262,14 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
             builder.walk_to(current)
             continue
         end = _ray_junction(graph, rays[neighbour], hub, radius)
+        radii = (rays[index].radius, rays[neighbour].radius)
         thread = builder.spin([current, end], "CAPTURE" if inward else "AUX",
                               sticky=inward, data={"spokes": (index, neighbour),
-                                                   "distances": (frontiers[index], radius)})
+                                                   "distances": (frontiers[index], radius),
+                                                   # LOD row binning (§4.9): mean d/R_k, s/R.
+                                                   "level": (frontiers[index]/radii[0] +
+                                                             radius/radii[1])/2,
+                                                   "band": 2*step/sum(radii)})
         if not inward:
             laid.append((thread, index, frontiers[index], neighbour, radius))
         frontiers[neighbour] = radius

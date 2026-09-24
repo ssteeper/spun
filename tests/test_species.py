@@ -20,7 +20,19 @@ def built(request):
 def test_species_passes_validator(built):
     _, result = built
     validate(result.data, result.metadata)
-    assert result.relaxation.accepted
+    # Snares are laid at their held/hanging positions and are never relaxed.
+    assert result.relaxation.accepted if result.metadata["kind"] == "orb" else result.relaxation is None
+
+
+def test_only_the_leaf_curler_hauls_a_leaf(built):
+    name, result = built
+    labels = [stage["label"] for stage in result.metadata["stages"]]
+    if name == "leaf-curling-spider":
+        assert "hauling a leaf" in labels
+        return
+    assert "hauling a leaf" not in labels and labels[0] == "scaffold"
+    if result.metadata["kind"] == "orb":
+        assert labels[1] == "bridge line"
 
 
 def test_species_rebuild_is_byte_identical(built):

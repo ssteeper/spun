@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from typing import Callable
 
-from . import arachnura, argiope, austracantha, golden, hortophora, phonognatha
+from . import (arachnura, argiope, austracantha, deinopis, golden, hortophora, latrodectus,
+               ordgarius, phonognatha)
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,12 @@ CATALOGUE = (
             "Austracantha minax", "orb", 0.35, 36, 0.8, 8, 2.0, "hub-rest", austracantha.build),
     Species("scorpion-tailed-spider", "arachnura", "Scorpion-tailed Spider", "Arachnura higginsi",
             "orb", 0.35, 26, 0.85, 16, 1.6, "hub-tail", arachnura.build),
+    Species("net-casting-spider", "deinopis", "Net-casting Spider", "Deinopis subrufa",
+            "snare", 0.12, 18, 0.7, 25, 1.0, "net", deinopis.build),
+    Species("magnificent-spider", "ordgarius", "Magnificent Spider", "Ordgarius magnificus",
+            "snare", 0.15, 12, 0.8, 14, 1.0, "hanging", ordgarius.build),
+    Species("redback-spider", "latrodectus", "Redback Spider", "Latrodectus hasselti",
+            "snare", 0.3, 24, 1.1, 10, 1.8, "retreat", latrodectus.build),
 )
 BY_ID = {species.id: species for species in CATALOGUE}
 # id -> build(); each build() stays a module function, so ``__module__`` names the stem.

@@ -33,15 +33,65 @@ def _style(thread, a, b, segment_index):
     return quantize_width(width or 0), color, round(255*alpha)
 
 
+# §4.9 fixed importances; ranked kinds (CAPTURE, CRIBELLATE, TANGLE) are computed.
+_FIXED_LOD = {"AUX": 128, "TUFT": 96}
+
+
+def _bit_reversal_order(count):
+    """Row indices in van der Corput order: 0, n/2, n/4, 3n/4, ... (evenly thinning)."""
+    bits = max(1, (count-1).bit_length())
+    return sorted(range(count), key=lambda i: int(format(i, f"0{bits}b")[::-1], 2))
+
+
+def lods(graph):
+    """Per-thread LOD byte (§4.9).
+
+    Ranked rows come from each chord's ``level`` (mean normalized radius d/R_k)
+    and ``band`` (its normalized row spacing), binned per builder and kind.
+    """
+    result = {}
+    builders = {action.payload: action.builder for action in graph.actions
+                if action.operation == "spin"}
+    groups = {}
+    tangle = []
+    for thread_id, thread in enumerate(graph.threads):
+        if thread.kind in ("CAPTURE", "CRIBELLATE"):
+            groups.setdefault((builders[thread_id], thread.kind), []).append(thread_id)
+        elif thread.kind == "TANGLE":
+            tangle.append(thread_id)
+        else:
+            result[thread_id] = _FIXED_LOD.get(thread.kind, 255)
+    for key in sorted(groups):
+        members = groups[key]
+        levels = [graph.threads[t].data["level"] for t in members]
+        width = float(np.median([graph.threads[t].data["band"] for t in members]))
+        top = max(levels)
+        rows = [int((top-level)/width + 0.5) for level in levels]
+        count = max(rows)+1
+        rank = {row: position for position, row in enumerate(_bit_reversal_order(count))}
+        for thread_id, row in zip(members, rows):
+            result[thread_id] = 1 + int(254*(1 - rank[row]/count))
+
+    def span(thread_id):
+        path = graph.threads[thread_id].path
+        return sum(math.dist(graph.position(a), graph.position(b)) for a, b in zip(path, path[1:]))
+    ordered = sorted(tangle, key=lambda t: (-span(t), t))
+    for rank, thread_id in enumerate(ordered):
+        result[thread_id] = 255 - round(215*rank/max(1, len(ordered)-1))
+    return result
+
+
 def emit(graph):
     """Node coordinates are quantized once, then reused by every owning thread."""
     coordinates = [(quantize_coord(node.point[0]), quantize_coord(node.point[1]))
                    for node in graph.nodes]
+    importance = lods(graph)
     rows = []
     thread_records = {}
     rest = {}
 
-    def append(a, b, thread, builder, *, walking=False, segment_index=0):
+    def append(a, b, thread_id, builder, *, walking=False, segment_index=0):
+        thread = graph.threads[thread_id]
         x0, y0 = coordinates[a]
         x1, y1 = coordinates[b]
         if x0 == x1 and y0 == y1:
@@ -56,7 +106,7 @@ def emit(graph):
         if walking:
             flags |= INVISIBLE
         rows.append((x0, y0, x1, y1, NEVER, BY_NAME["WALK" if walking else thread.kind].id,
-                     width, *color, 255 if thread.kind != "AUX" else 128, flags, alpha))
+                     width, *color, 255 if walking else importance[thread_id], flags, alpha))
         return len(rows)-1
 
     for action in graph.actions:
@@ -65,14 +115,14 @@ def emit(graph):
             thread = graph.threads[thread_id]
             indices = []
             for j, (a, b) in enumerate(zip(thread.path, thread.path[1:])):
-                indices.append(append(a, b, thread, action.builder, segment_index=j))
+                indices.append(append(a, b, thread_id, action.builder, segment_index=j))
             thread_records[thread_id] = indices
         elif action.operation == "walk":
             for thread_id, start, end in action.payload:
                 thread = graph.threads[thread_id]
                 path = graph.final_subpath(thread_id, start, end)
                 for a, b in zip(path, path[1:]):
-                    append(a, b, thread, action.builder, walking=True)
+                    append(a, b, thread_id, action.builder, walking=True)
         elif action.operation == "remove":
             for thread_id in action.payload:
                 for index in thread_records[thread_id]:

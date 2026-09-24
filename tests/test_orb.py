@@ -131,8 +131,10 @@ def test_capture_terminations_leave_no_large_empty_wedge(reference):
 def test_upper_left_light_grazes_perpendicular_capture_threads():
     graph = PlanGraph()
     origin = graph.node((20, 20))
-    graph.add_thread([origin, graph.node((10, 10))], "CAPTURE", sticky=True)
-    graph.add_thread([origin, graph.node((30, 10))], "CAPTURE", sticky=True)
+    graph.add_thread([origin, graph.node((10, 10))], "CAPTURE", sticky=True,
+                     data={"level": 1.0, "band": 0.1})
+    graph.add_thread([origin, graph.node((30, 10))], "CAPTURE", sticky=True,
+                     data={"level": 1.0, "band": 0.1})
     records, _, _ = emit(graph)
     upper_left, upper_right = records
     base = bytes.fromhex(COLORS["sticky"][1:])

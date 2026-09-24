@@ -81,7 +81,7 @@ def _fixed_spline(graph, controls):
     return [graph.node(point, fixed=True) for point in points]
 
 
-def _leaf(graph, root, length, direction):
+def leaf(graph, root, length, direction):
     """Two gently arched lanceolate margins, a curved midrib, and paired veins."""
     base = graph.position(root)
     forward = (math.cos(direction), math.sin(direction))
@@ -101,15 +101,34 @@ def _leaf(graph, root, length, direction):
     vein = _fixed_spline(graph, [base, place(0.26, 2), place(0.69, 3), tip])
     shades = ((margin, COLORS["leaf"]), (vein, COLORS["leaf_vein"]))
     for path, color in shades:
-        graph.add_thread(path, "LEAF", env=True,
+        graph.add_thread(path, "SCAFFOLD", env=True,
                          styles=[(BY_NAME["LEAF"].width, _rgb(color), 0.9)]*(len(path)-1))
     for part in (0.30, 0.53, 0.72):
         for side in (-1, 1):
             a = graph.node(place(part, 2), fixed=True)
             b = graph.node(place(min(part+0.15, 0.91), side*broad*(1-part)), fixed=True)
             if a != b:
-                graph.add_thread([a, b], "LEAF", env=True,
+                graph.add_thread([a, b], "SCAFFOLD", env=True,
                                  styles=[(BY_NAME["LEAF"].width, _rgb(COLORS["leaf_vein"]), 0.7)])
+
+
+def twig(graph, rng, controls, start_width=None, end_width=None):
+    """A fixed, tapering bark curve through Catmull–Rom controls; returns its nodes."""
+    nodes = _fixed_spline(graph, controls)
+    graph.add_thread(nodes, "SCAFFOLD", env=True,
+                     styles=_twig_styles(len(nodes)-1, rng, start_width, end_width))
+    return nodes
+
+
+def polyline(graph, points, kind, color, width, alpha=1.0):
+    """A fixed ENV polyline of one colour (rail edges, grain, ground, litter)."""
+    nodes = []
+    for point in points:
+        node = point if isinstance(point, int) else graph.node(point, fixed=True)
+        if not nodes or node != nodes[-1]:
+            nodes.append(node)
+    graph.add_thread(nodes, kind, env=True, styles=[(width, _rgb(color), alpha)]*(len(nodes)-1))
+    return nodes
 
 
 def _side_twig(graph, rng, source, tip, root_width, bend_sign, fork):
@@ -184,7 +203,7 @@ def orb_scaffold(graph: PlanGraph, polygon, rng, branches, shared=()):
             graph.add_thread(twiglet, "SCAFFOLD", env=True,
                              styles=_twig_styles(len(twiglet)-1, rng, start_width=3.2))
         for fraction, size, angle in branch.leaves:
-            _leaf(graph, trunk[round(fraction*(len(trunk)-1))], size, angle)
+            leaf(graph, trunk[round(fraction*(len(trunk)-1))], size, angle)
     if any((anchor is None) != (i in shared) for i, anchor in enumerate(anchors)) \
             or arrival is None:
         raise ValueError("every frame anchor needs a scaffold connection")
