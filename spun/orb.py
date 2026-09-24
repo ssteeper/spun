@@ -11,7 +11,7 @@ from .emit import emit
 from .geometry import length, ray_polygon
 from .pacing import pace
 from .relax import relax
-from .scaffold import orb_scaffold
+from .scaffold import BranchSpec, orb_scaffold
 from .silkfile import write_silk
 from .validate import validate
 
@@ -31,6 +31,8 @@ class OrbParameters:
     auxiliary_spacing: float
     mm_per_px: float
     duration: float
+    branches: tuple[BranchSpec, ...]
+    lower_anchor: int | None = None
     pose: str = "hub-rest"
     golden: bool = False
     open_sectors: tuple[tuple[float, float], ...] = ()
@@ -54,6 +56,7 @@ class OrbResult:
     graph: PlanGraph
     relaxation: object
     turnbacks: int
+    turnback_locations: list[tuple[int, float]]
     radial_gap_cv: float
     spacing_cv: float
     env_fraction: float
@@ -155,11 +158,15 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
     graph = builder.graph
     n = len(rays)
     limits = [r_free if inward else 0.90*ray.radius for ray in rays]
-    frontiers = [0.94*ray.radius if inward else 0.45*r_free+8 for ray in rays]
+    first = [0.94*ray.radius if inward else 0.45*r_free+8 for ray in rays]
+    frontiers = first.copy()
     index, direction = 0, 1
     current = _ray_junction(graph, rays[index], hub, frontiers[index])
     builder.walk_to(current)
+    visits = [0]*n
+    visits[index] = 1
     turnbacks = 0
+    turnback_locations = []
     laid = []
     remaining_aux = dict(auxiliaries)
     blocked = set()
@@ -179,8 +186,13 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
                          for start, end in sectors)
             if across:
                 return None
-            radial = frontiers[neighbour] - step if inward else frontiers[neighbour] + step
-            if inward and radial <= limits[neighbour] or not inward and radial >= limits[neighbour]:
+            radial = (first[neighbour] if visits[neighbour] == 0 else
+                      frontiers[neighbour] - step if inward else frontiers[neighbour] + step)
+            if inward and radial <= limits[neighbour]:
+                if frontiers[neighbour]-limits[neighbour] <= 0.5:
+                    return None
+                radial = limits[neighbour]+0.5
+            elif not inward and radial >= limits[neighbour]:
                 return None
             return radial
 
@@ -192,6 +204,7 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
             radius = candidate(neighbour)
             if radius is not None:
                 turnbacks += 1
+                turnback_locations.append((visits[index]-1, round(math.degrees(rays[index].angle), 1)))
         if radius is None:
             blocked.add(index)
             room = [(f-r_free if inward else lim-f, j)
@@ -213,6 +226,7 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
         if not inward:
             laid.append((thread, index, frontiers[index], neighbour, radius))
         frontiers[neighbour] = radius
+        visits[neighbour] += 1
         index, current = neighbour, end
         if inward and remaining_aux:
             eaten = [thread_id for thread_id, (j, a, k, b) in remaining_aux.items()
@@ -223,13 +237,15 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
                     del remaining_aux[thread_id]
     else:
         raise ValueError("spiral frontier failed to terminate")
-    return laid, turnbacks, list(remaining_aux)
+    return laid, turnbacks, list(remaining_aux), turnback_locations
 
 
 def build_orb(spec: OrbParameters):
-    rng = np.random.default_rng(zlib.crc32(spec.id.encode("utf-8")))
+    seed = zlib.crc32(spec.id.encode("utf-8"))
+    rng = np.random.default_rng(seed)
+    bark_rng = np.random.default_rng(seed ^ 0x9E3779B9)
     graph = PlanGraph()
-    anchors, first = orb_scaffold(graph, spec.polygon, rng)
+    anchors, first = orb_scaffold(graph, spec.polygon, bark_rng, spec.branches)
     builder = Builder(graph, first)
     builder.walk_to(anchors[0])
     bridge = builder.spin([anchors[0], anchors[1]], "BRIDGE")
@@ -239,7 +255,7 @@ def build_orb(spec: OrbParameters):
     top, bottom = min(p[1] for p in spec.polygon), max(p[1] for p in spec.polygon)
     hub = graph.node((graph.position(m)[0]+rng.uniform(-16, 16),
                       top+spec.hub_fraction*(bottom-top)))
-    bottom_anchor = len(anchors)//2
+    bottom_anchor = spec.lower_anchor if spec.lower_anchor is not None else len(anchors)//2
     builder.walk_to(m)
     seed = builder.spin([m, hub, anchors[bottom_anchor]], "RADIUS")
     builder.walk_to(anchors[1])
@@ -258,10 +274,10 @@ def build_orb(spec: OrbParameters):
                      target, rng, spec.open_sectors)
     builder.walk_to(hub)
     _hub(builder, rays, hub, spec.free_radius)
-    auxiliary, _, _ = _spiral(builder, rays, hub, inward=False, r_free=spec.free_radius,
+    auxiliary, _, _, _ = _spiral(builder, rays, hub, inward=False, r_free=spec.free_radius,
                               aux_spacing=spec.auxiliary_spacing, inner=spec.spacing_inner,
                               outer=spec.spacing_outer, rng=rng, sectors=spec.open_sectors)
-    _, turnbacks, residual = _spiral(builder, rays, hub, inward=True,
+    _, turnbacks, residual, turnback_locations = _spiral(builder, rays, hub, inward=True,
                                      r_free=spec.free_radius, aux_spacing=spec.auxiliary_spacing,
                                      inner=spec.spacing_inner, outer=spec.spacing_outer,
                                      rng=rng, sectors=spec.open_sectors,
@@ -310,4 +326,4 @@ def build_orb(spec: OrbParameters):
         spacing.extend(b-a for a, b in zip(distinct, distinct[1:]))
     spacing_cv = float(np.std(spacing)/np.mean(spacing))
     return OrbResult(data, records, beads, metadata, rest, graph, relaxation,
-                     turnbacks, radial_gap_cv, spacing_cv, timing["envFraction"])
+                     turnbacks, turnback_locations, radial_gap_cv, spacing_cv, timing["envFraction"])

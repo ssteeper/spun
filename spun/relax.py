@@ -18,6 +18,8 @@ class Relaxation:
     max_displacement: float
     accepted: bool
     reason: str
+    converged: bool
+    final_step: float
 
 
 def _final_lines(graph, points):
@@ -74,6 +76,7 @@ def relax(graph, radial_paths, mean_radius):
     position = original.copy()
     velocity = np.zeros_like(position)
     iterations = 0
+    final_step = 0.0
     for iterations in range(1, 401):
         vectors = position[ends]-position[starts]
         distances = np.linalg.norm(vectors, axis=1)
@@ -86,7 +89,8 @@ def relax(graph, radial_paths, mean_radius):
         velocity[fixed] = 0
         change = 0.2*velocity
         position += change
-        if np.max(np.linalg.norm(change, axis=1)) < 1e-3:
+        final_step = float(np.max(np.linalg.norm(change, axis=1)))
+        if final_step < 1e-3:
             break
     max_shift = float(np.max(np.linalg.norm(position-original, axis=1)))
     reason = "accepted"
@@ -103,4 +107,5 @@ def relax(graph, radial_paths, mean_radius):
         for node, point in zip(graph.nodes, position):
             node.point = (float(point[0]), float(point[1]))
     # Rejected equilibrium leaves *all* nodes at their original planned locations.
-    return Relaxation(iterations, max_shift, reason == "accepted", reason)
+    return Relaxation(iterations, max_shift, reason == "accepted", reason,
+                      final_step < 1e-3, final_step)

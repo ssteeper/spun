@@ -1,15 +1,16 @@
 """Behavioral invariants for the reference species and plan/emit cutover."""
 
 import hashlib
+import math
 
 import numpy as np
 import pytest
 
-from species.hortophora import build
+from species.hortophora import SPEC, build
 from spun.builder import Builder, PlanGraph
 from spun.emit import emit
 from spun.relax import relax
-from spun.kinds import BY_NAME, ENV, INVISIBLE
+from spun.kinds import BY_NAME, COLORS, ENV, INVISIBLE
 from spun.silkfile import NEVER, read_silk
 from spun.validate import validate
 
@@ -90,3 +91,50 @@ def test_two_complete_reference_builds_are_byte_identical(reference):
     another = build()
     assert hashlib.sha256(reference.data).digest() == hashlib.sha256(another.data).digest()
     assert reference.metadata["timeline"] == another.metadata["timeline"]
+
+
+def test_first_spiral_junction_on_every_radius_matches_frame_and_hub(reference):
+    graph = reference.graph
+    hub = reference.metadata["orbs"][0]["hub"]
+    radii = reference.metadata["orbs"][0]["radii"]
+    for kind, fraction in (("CAPTURE", 0.94), ("AUX", None)):
+        first = {}
+        for thread in graph.threads:
+            if thread.kind != kind:
+                continue
+            for spoke, node in zip(thread.data["spokes"],
+                                   (thread.path[0], thread.path[-1])):
+                first.setdefault(spoke, math.dist(hub, graph.position(node)))
+        assert set(first) == set(range(len(radii)))
+        for spoke, distance in first.items():
+            target = (fraction*math.dist(hub, radii[spoke]) if fraction is not None
+                      else 0.45*SPEC.free_radius+8)
+            assert abs(distance-target) < 5
+
+
+def test_capture_terminations_leave_no_large_empty_wedge(reference):
+    graph = reference.graph
+    count = len(reference.metadata["orbs"][0]["radii"])
+    inner_edges = [[] for _ in range(count)]
+    for thread in graph.threads:
+        if thread.kind != "CAPTURE":
+            continue
+        first, last = thread.data["spokes"]
+        sector = first if last == (first+1) % count else last
+        hub = reference.metadata["orbs"][0]["hub"]
+        inner_edges[sector].append(max(math.dist(hub, graph.position(thread.path[0])),
+                                       math.dist(hub, graph.position(thread.path[-1]))))
+    assert all(inner_edges)
+    assert max(min(distances) for distances in inner_edges) < SPEC.free_radius+31
+
+
+def test_upper_left_light_grazes_perpendicular_capture_threads():
+    graph = PlanGraph()
+    origin = graph.node((20, 20))
+    graph.add_thread([origin, graph.node((10, 10))], "CAPTURE", sticky=True)
+    graph.add_thread([origin, graph.node((30, 10))], "CAPTURE", sticky=True)
+    records, _, _ = emit(graph)
+    upper_left, upper_right = records
+    base = bytes.fromhex(COLORS["sticky"][1:])
+    assert (upper_left["r"], upper_left["g"], upper_left["b"]) == tuple(base)
+    assert (upper_right["r"], upper_right["g"], upper_right["b"]) != tuple(base)

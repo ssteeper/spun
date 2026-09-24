@@ -7,6 +7,7 @@ import numpy as np
 
 from .kinds import BY_NAME, COLORS, BUILDER_SHIFT, ENV, INVISIBLE, STICKY
 from .silkfile import BEAD_DTYPE, NEVER, RECORD_DTYPE, quantize_coord, quantize_width
+LIGHT_ANGLE = -3*math.pi/4  # Upper left in canvas coordinates (positive y points down).
 
 
 def _color(hexcode):
@@ -24,9 +25,8 @@ def _style(thread, a, b, segment_index):
         width, alpha = kind.width, kind.alpha
         if thread.kind == "CAPTURE":
             angle = math.atan2(b[1]-a[1], b[0]-a[0])
-            light = -math.pi/4
-            amount = 0.22*abs(math.sin(angle-light))**4
-            hue = (0.62+0.9*((angle-light) % math.pi)/math.pi) % 1
+            amount = 0.22*abs(math.sin(angle-LIGHT_ANGLE))**4
+            hue = (0.62+0.9*((angle-LIGHT_ANGLE) % math.pi)/math.pi) % 1
             spectral = colorsys.hsv_to_rgb(hue, 0.55, 1)
             color = tuple(round((1-amount)*base + amount*255*accent)
                           for base, accent in zip(color, spectral))
