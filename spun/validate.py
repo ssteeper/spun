@@ -109,34 +109,38 @@ def _orb_geometry(rows: np.ndarray, orb: dict, golden: bool) -> None:
     _require(all(gap > 0 for gap in gaps), 5, "rays must have distinct angles")
     _require(0.08 <= _cv(gaps) <= 0.40, 6, "adjacent radial-gap CV must be 0.08–0.40")
     distances: dict[int, list[float]] = defaultdict(list)
-    coverage: dict[int, tuple[float, float]] = {}
+    adjacency: dict[tuple[int, int], list[tuple[tuple[int, int], int]]] = defaultdict(list)
+    for i, a, b in radial:
+        adjacency[a].append((b, i))
+        adjacency[b].append((a, i))
+    spokes: dict[tuple[int, int], int] = {}
+    visited: set[int] = set()
+    deviation = 0.03 * float(np.mean([math.dist(hub, end) for end in rays])) + 2
+    for j, foot in enumerate(rays):
+        _require(foot in adjacency, 5, "declared radial endpoint is not on silk")
+        point = foot
+        previous = None
+        while point != hub:
+            _require(point not in spokes or spokes[point] == j, 5, "radial spokes merge away from hub")
+            spokes[point] = j
+            following = [(next_point, index) for next_point, index in adjacency[point]
+                         if next_point != previous]
+            _require(len(following) == 1, 5, "radial spoke is broken, forked or cyclic")
+            next_point, record_index = following[0]
+            _require(record_index not in visited, 5, "radial record belongs to more than one spoke")
+            visited.add(record_index)
+            ex, ey = foot[0]-hub[0], foot[1]-hub[1]
+            span = math.hypot(ex, ey)
+            _require(abs(_cross(hub, foot, point))/span <= deviation and
+                     ((point[0]-hub[0])*ex+(point[1]-hub[1])*ey) >= 0,
+                     5, "relaxed spoke exceeds the allowed displacement")
+            previous, point = point, next_point
+    _require(len(visited) == len(radial), 5, "unclaimed surviving radial segment")
 
     def ray_for(point: tuple[int, int]) -> tuple[int, float]:
-        vx, vy = point[0] - hub[0], point[1] - hub[1]
-        length = math.hypot(vx, vy)
-        _require(length > 0, 5, "capture endpoint cannot be the hub")
-        matches = []
-        for j, end in enumerate(rays):
-            ex, ey = end[0] - hub[0], end[1] - hub[1]
-            side = abs(vx * ey - vy * ex) / math.hypot(ex, ey)
-            if side <= 2 and vx * ex + vy * ey > 0:
-                matches.append((side, j))
-        _require(bool(matches), 5, "capture junction must lie on a declared radius within 0.5 px")
-        return min(matches)[1], length / 4
+        _require(point != hub and point in spokes, 5, "capture junction must coincide with a radial node")
+        return spokes[point], math.dist(point, hub)/4
 
-    for _, a, b in radial:
-        j, _ = ray_for(b if a == hub else a)
-        end = rays[j]
-        ex, ey = end[0] - hub[0], end[1] - hub[1]
-        length2 = ex * ex + ey * ey
-        projections = [((p[0] - hub[0]) * ex + (p[1] - hub[1]) * ey) / length2 for p in (a, b)]
-        _require(all(-0.001 <= t <= 1.002 for t in projections) and
-                 all(abs(_cross(hub, end, p)) / math.sqrt(length2) <= 2 for p in (a, b)),
-                 5, "radius segment must run along its declared spoke")
-        low, high = coverage.get(j, (1.0, 0.0))
-        coverage[j] = min(low, *projections), max(high, *projections)
-    _require(len(coverage) == len(rays) and all(lo <= 0.002 and hi >= 0.998 for lo, hi in coverage.values()),
-             5, "all declared radii must run from hub to frame")
     for _, a, b in captures:
         ja, da = ray_for(a)
         jb, db = ray_for(b)
@@ -178,11 +182,17 @@ def _orb_geometry(rows: np.ndarray, orb: dict, golden: bool) -> None:
     for first, second in _crossing_pairs(lines):
         i, a, b, radial_a = first
         j, c, d, radial_b = second
-        if radial_a and radial_b and len({a, b, c, d}) == 3 and _cross(a, b, c) == 0:
+        if not _intersects(a, b, c, d):
             continue
-        _require(not _intersects(a, b, c, d) or bool({a, b} & {c, d}) and
-                 not (_cross(a, b, c) == _cross(a, b, d) == 0 and len({a, b, c, d}) < 4),
-                 5, f"forbidden final-web crossing between records {i} and {j}")
+        shared = {a, b} & {c, d}
+        allowed = bool(shared) and not (_cross(a, b, c) == _cross(a, b, d) == 0)
+        if len(shared) == 1 and _cross(a, b, c) == _cross(a, b, d) == 0:
+            point = next(iter(shared))
+            first_other = b if a == point else a
+            second_other = d if c == point else c
+            allowed = ((first_other[0]-point[0])*(second_other[0]-point[0]) +
+                       (first_other[1]-point[1])*(second_other[1]-point[1])) <= 0
+        _require(allowed, 5, f"forbidden final-web crossing between records {i} and {j}")
     if golden:
         ymin, ymax = min(p[1] for p in polygon), max(p[1] for p in polygon)
         _require((hub[1] - ymin) / (ymax - ymin) <= 0.4 and turnbacks >= 6,
