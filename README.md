@@ -12,7 +12,7 @@ The same catalogue at dawn, with dew: [renders/catalogue_dawn.png](renders/catal
 
 This table is the verbatim output of `.venv/Scripts/python.exe tools/build.py --markdown`, which reads `web/specimens/index.json`.
 
-| Spider | Scientific name | Kind | File | Signature | Rest | Threads | Beads | Silk (m) | Bytes |
+| Spider | Scientific name | Kind | File | Signature | Rest | Segments | Beads | Silk (m) | Bytes |
 |---|---|---|---|---|---|---:|---:|---:|---:|
 | Golden Orb-weaver | *Trichonephila edulis* | orb | `golden.silk` | Upper-third golden hub, retained temporary silk, barrier tangle | head-down | 18,020 | 32,000 | 159.6 | 616,432 |
 | St Andrew's Cross Spider | *Argiope keyserlingi* | orb | `argiope.silk` | Four zig-zag stabilimentum bands in an X | hub-x | 7,196 | 11,740 | 36.7 | 237,872 |
