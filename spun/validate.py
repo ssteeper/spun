@@ -107,7 +107,12 @@ def _orb_geometry(rows: np.ndarray, orb: dict, golden: bool) -> None:
     gaps = [(angles[(i + 1) % len(angles)] - angle) % math.tau
             for i, angle in enumerate(angles)]
     _require(all(gap > 0 for gap in gaps), 5, "rays must have distinct angles")
-    _require(0.08 <= _cv(gaps) <= 0.40, 6, "adjacent radial-gap CV must be 0.08–0.40")
+    # Gaps bordering an open sector (Arachnura's V) are signature, not jitter.
+    sectors = orb.get("openSectors", [])
+    regular = [gap for angle, gap in zip(angles, gaps)
+               if not any(0 <= (start - angle) % math.tau < gap or
+                          0 <= (end - angle) % math.tau < gap for start, end in sectors)]
+    _require(0.08 <= _cv(regular) <= 0.40, 6, "adjacent radial-gap CV must be 0.08–0.40")
     distances: dict[int, list[float]] = defaultdict(list)
     adjacency: dict[tuple[int, int], list[tuple[tuple[int, int], int]]] = defaultdict(list)
     for i, a, b in radial:

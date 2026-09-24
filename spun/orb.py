@@ -39,6 +39,8 @@ class OrbParameters:
     golden: bool = False
     open_sectors: tuple[tuple[float, float], ...] = ()
     extra: Callable | None = None
+    # Colony only: frame corners that sit on an earlier orb's live frame thread.
+    shared: tuple[int, ...] = ()
 
 
 @dataclass
@@ -63,6 +65,9 @@ class OrbResult:
     radial_gap_cv: float
     spacing_cv: float
     env_fraction: float
+    width: int
+    height: int
+    builder_count: int
 
 
 @dataclass
@@ -251,6 +256,8 @@ def _spiral(builder, rays, hub, *, inward, r_free, aux_spacing, inner, outer,
             if available < 2*step:
                 break
             index = j
+            # Her junction on a jumped-to spoke counts as its first visit.
+            visits[index] = max(visits[index], 1)
             current = _ray_junction(graph, rays[index], hub, frontiers[index])
             builder.walk_to(current)
             continue
@@ -317,7 +324,8 @@ def _plan_orb(spec: OrbParameters, graph: PlanGraph, anchors: list[int],
     if residual and not spec.golden:
         builder.remove(residual)
     builder.walk_to(hub)
-    rest_node = spec.extra(builder, rays, hub, anchors, rng, spec) if spec.extra else None
+    rest_node = (spec.extra(builder, rays, hub, anchors, rng, spec, frame_threads)
+                 if spec.extra else None)
     builder.walk_to(hub if rest_node is None else rest_node)
     builder.rest(spec.pose, math.pi/2)
     if spec.golden:
@@ -341,6 +349,10 @@ def _orb_metrics(graph: PlanGraph, plan: OrbPlan) -> tuple[float, float]:
     rays = plan.rays
     gaps = [(rays[(i+1) % len(rays)].angle-ray.angle) % math.tau
             for i, ray in enumerate(rays)]
+    # As the validator: gaps bordering an open sector are excluded from the CV.
+    gaps = [gap for ray, gap in zip(rays, gaps)
+            if not any(0 <= (edge-ray.angle) % math.tau < gap
+                       for sector in plan.spec.open_sectors for edge in sector)]
     junctions = [[] for _ in rays]
     origin = np.array(graph.position(plan.hub))
     for action in graph.actions:
@@ -373,7 +385,7 @@ def _finish_orbs(specs: tuple[OrbParameters, ...], graph: PlanGraph,
     timing = pace(records, specs[0].duration)
     metrics = [_orb_metrics(graph, plan) for plan in plans]
     metadata = {
-        "kind": "orb", "golden": specs[0].golden,
+        "kind": "orb", "golden": specs[0].golden, "anchor": list(graph.position(plans[0].hub)), "mmPerUnit": specs[0].mm_per_px,
         "orbs": [{"builder": plan.builder_index, "hub": list(graph.position(plan.hub)),
                   "frame": [list(graph.position(anchor)) for anchor in plan.anchors],
                   "radii": [list(graph.position(ray.foot)) for ray in plan.rays],
@@ -392,7 +404,7 @@ def _finish_orbs(specs: tuple[OrbParameters, ...], graph: PlanGraph,
                      [location for plan in plans for location in plan.turnback_locations],
                      float(np.mean([pair[0] for pair in metrics])),
                      float(np.mean([pair[1] for pair in metrics])),
-                     timing["envFraction"])
+                     timing["envFraction"], specs[0].width, specs[0].height, len(plans))
 
 
 def build_orb(spec: OrbParameters) -> OrbResult:
@@ -404,21 +416,24 @@ def build_orb(spec: OrbParameters) -> OrbResult:
     return _finish_orbs((spec,), graph, [plan])
 
 
-def build_colony(specs: tuple[OrbParameters, ...],
-                 shared_anchors: tuple[int | None, ...]) -> OrbResult:
-    """Build scaffold first, then each orb sequentially on one pre-split graph."""
-    if len(specs) != 3 or len(shared_anchors) != 3 or shared_anchors[0] is not None:
-        raise ValueError("the colony needs three sequential orbs and two shared anchors")
+def build_colony(specs: tuple[OrbParameters, ...]) -> OrbResult:
+    """Build all scaffold first, then each orb sequentially on one pre-split graph.
+
+    A later orb's ``shared`` frame corners attach to an earlier orb's live
+    frame thread, splitting it in the plan graph only.
+    """
+    if len(specs) != 3 or specs[0].shared or not all(spec.shared for spec in specs[1:]):
+        raise ValueError("the colony needs three sequential orbs, the later two sharing frames")
     graph = PlanGraph()
     scaffold = []
     for spec in specs:
         seed = zlib.crc32(spec.id.encode("utf-8"))
         scaffold.append(orb_scaffold(
-            graph, spec.polygon, np.random.default_rng(seed ^ 0x9E3779B9), spec.branches))
+            graph, spec.polygon, np.random.default_rng(seed ^ 0x9E3779B9), spec.branches,
+            shared=spec.shared))
     plans = []
     for index, (spec, (anchors, first)) in enumerate(zip(specs, scaffold)):
-        if shared_anchors[index] is not None:
-            anchor_index = shared_anchors[index]
+        for anchor_index in spec.shared:
             point = spec.polygon[anchor_index]
             attached = None
             for previous in plans:
@@ -427,8 +442,7 @@ def build_colony(specs: tuple[OrbParameters, ...],
                         attached = graph.attach(frame, point)
                     except ValueError:
                         continue
-                    else:
-                        break
+                    break
                 if attached is not None:
                     break
             if attached is None:

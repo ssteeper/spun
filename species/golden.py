@@ -4,13 +4,13 @@ import math
 
 from spun.kinds import BY_NAME, COLORS
 from spun.orb import OrbParameters, build_orb
-from spun.scaffold import BranchSpec
+from spun.scaffold import BranchSpec, frame_polygon
 
-# The barrier stands between the orb's right frame and the right-hand branch.
-BOX = ((1045, 1215), (520, 1340), (-110, 110))
+# The barrier curtain hangs beyond the right-hand limb.
+BOX = ((1125, 1225), (520, 1340), (-110, 110))
 
 
-def _barrier(builder, rays, hub, anchors, rng, spec):
+def _barrier(builder, rays, hub, anchors, rng, spec, frames):
     """Spin a projected 3-D barrier, starting from the orb's right-hand anchors."""
     graph = builder.graph
     count = int(rng.integers(52, 67))
@@ -61,36 +61,35 @@ def _barrier(builder, rays, hub, anchors, rng, spec):
     return hub
 
 
+# A leaning sapling on the left forks into a crown bough over the orb; a
+# second limb sweeps up from the ground on the right. The orb hangs between.
+BRANCHES = (
+    BranchSpec(
+        controls=((90, 1700), (100, 1450), (80, 1180), (111, 960), (100, 700),
+                  (160, 440), (260, 160)),
+        anchors=((7, (150, 1303)), (8, (111, 960)), (9, (118, 690)), (10, (202, 439))),
+        leaves=((0.93, 84, -2.2), (0.30, 90, -2.0))),
+    BranchSpec(
+        controls=((215, 280), (420, 255), (620, 245), (814, 272), (930, 300),
+                  (1060, 280)),
+        anchors=((0, (325, 317)), (1, (814, 272))),
+        leaves=((0.55, 88, -1.9), (0.97, 92, -0.5))),
+    BranchSpec(
+        controls=((560, 1700), (640, 1600), (899, 1438), (1060, 1200), (1100, 960),
+                  (1075, 700), (990, 470)),
+        anchors=((6, (610, 1560)), (5, (899, 1438)), (4, (1047, 1074)),
+                 (3, (1037, 771)), (2, (991, 514))),
+        leaves=((0.95, 90, -2.0), (0.28, 96, 0.4))),
+)
+
 SPEC = OrbParameters(
     id="golden-orb-weaver", width=1300, height=1700,
-    polygon=((325, 317), (814, 272), (991, 514), (1037, 771), (1047, 1074),
-             (899, 1438), (482, 1535), (150, 1303), (111, 960), (118, 690),
-             (202, 439)),
+    polygon=frame_polygon(BRANCHES),
     radii_min=38, radii_max=46, hub_fraction=0.30,
     spacing_outer=7.4, spacing_inner=6.3, free_radius=50,
     auxiliary_spacing=26, mm_per_px=0.8, duration=42,
     lower_anchor=6, golden=True, pose="head-down", extra=_barrier,
-    branches=(
-        BranchSpec(
-            controls=((60, 60), (220, 140), (420, 175), (640, 160), (860, 110),
-                      (1060, 30)),
-            anchors=((0, 0.30), (1, 0.71)),
-            leaves=((0.12, 84, 0.9), (0.82, 90, -0.9))),
-        BranchSpec(
-            controls=((1110, 150), (1185, 480), (1235, 800), (1215, 1200),
-                      (1250, 1640)),
-            anchors=((2, 0.21), (3, 0.41), (4, 0.63)),
-            leaves=((0.08, 88, -2.0), (0.86, 96, 2.6))),
-        BranchSpec(
-            controls=((1250, 1690), (1000, 1620), (720, 1600), (420, 1640),
-                      (160, 1690)),
-            anchors=((5, 0.34), (6, 0.69)),
-            leaves=((0.52, 98, -1.2),)),
-        BranchSpec(
-            controls=((30, 1560), (40, 1250), (30, 950), (55, 650), (100, 360)),
-            anchors=((7, 0.22), (8, 0.50), (9, 0.73), (10, 0.91)),
-            leaves=((0.36, 85, -0.6), (0.62, 92, -1.3))),
-    ),
+    branches=BRANCHES,
 )
 
 

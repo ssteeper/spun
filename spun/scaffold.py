@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 
 from .builder import PlanGraph
-from .geometry import catmull_rom
+from .geometry import catmull_rom, point_on
 from .kinds import BY_NAME, COLORS
 
 
@@ -12,16 +12,55 @@ def _rgb(hexcode):
     return tuple(bytes.fromhex(hexcode[1:]))
 
 
+# A frame corner closer than this to the bark is tied straight onto it.
+BARK_SNAP = 12.0
+# Longest side twig carrying a frame anchor.
+TWIG_MAX = 90.0
+
+
 @dataclass(frozen=True)
 class BranchSpec:
-    """A long outer branch, its attachment forks and placed eucalypt leaves."""
+    """A long branch, the frame corners it carries and its eucalypt leaves.
+
+    ``anchors`` holds ``(polygon index, (x, y))`` desired corners: a corner
+    within ``BARK_SNAP`` of the bark sits on it; otherwise a short, nearly
+    straight side twig (≤ ``TWIG_MAX``) grows from the nearest bark point.
+    """
 
     controls: tuple[tuple[float, float], ...]
-    anchors: tuple[tuple[int, float], ...]
+    anchors: tuple[tuple[int, tuple[float, float]], ...]
     leaves: tuple[tuple[float, float, float], ...] = ()
 
 
-def _twig_styles(count, rng, start_width=None):
+def _resolve(trunk_points, target):
+    """Return (trunk sample index, corner point, twig length) for a desired corner."""
+    index = min(range(len(trunk_points)), key=lambda i: math.dist(trunk_points[i], target))
+    distance = math.dist(trunk_points[index], target)
+    if distance <= BARK_SNAP:
+        return index, trunk_points[index], 0.0
+    if distance > TWIG_MAX:
+        raise ValueError(f"frame corner {target} is {distance:.0f} px from its branch")
+    return index, tuple(map(float, target)), distance
+
+
+def frame_polygon(branches, shared=None):
+    """Frame corners exactly as ``orb_scaffold`` will place them, in index order.
+
+    ``shared`` maps colony corner indices to points on an earlier orb's frame.
+    """
+    corners = dict(shared or {})
+    for branch in branches:
+        trunk = catmull_rom(branch.controls, interval=8)
+        for index, target in branch.anchors:
+            if index in corners:
+                raise ValueError("duplicate frame anchor")
+            corners[index] = _resolve(trunk, target)[1]
+    if sorted(corners) != list(range(len(corners))):
+        raise ValueError("frame corner indices must be contiguous from zero")
+    return tuple(corners[i] for i in range(len(corners)))
+
+
+def _twig_styles(count, rng, start_width=None, end_width=None):
     bark0, bark1 = _rgb("#5b3f2a"), _rgb("#8a6a48")
     definition = BY_NAME["SCAFFOLD"]
     styles = []
@@ -30,8 +69,9 @@ def _twig_styles(count, rng, start_width=None):
         noise = 1 + rng.uniform(-0.06, 0.06)
         color = tuple(max(0, min(255, round(((1-t)*a + t*b) * noise)))
                       for a, b in zip(bark0, bark1))
-        width = (definition.width if start_width is None else start_width) + (
-            definition.width_end - (definition.width if start_width is None else start_width))*t
+        start = definition.width if start_width is None else start_width
+        end = definition.width_end if end_width is None else end_width
+        width = start + (end - start)*t
         styles.append((width, color, definition.alpha))
     return styles
 
@@ -72,39 +112,61 @@ def _leaf(graph, root, length, direction):
                                  styles=[(BY_NAME["LEAF"].width, _rgb(COLORS["leaf_vein"]), 0.7)])
 
 
-def orb_scaffold(graph: PlanGraph, polygon, rng, branches):
-    """Compose 2–4 long branches, each supporting multiple named frame anchors."""
-    if not 2 <= len(branches) <= 4:
-        raise ValueError("an orb requires two to four scaffold branches")
+def _side_twig(graph, rng, source, tip, root_width, bend_sign, fork):
+    """A short, nearly straight tapering twig with one gentle bend and an optional spur."""
+    dx, dy = tip[0]-source[0], tip[1]-source[1]
+    span = math.hypot(dx, dy)
+    nx, ny = -dy/span, dx/span
+    bend = bend_sign*0.06*span
+    controls = (source,
+                (source[0]+0.35*dx+nx*bend, source[1]+0.35*dy+ny*bend),
+                (source[0]+0.70*dx+nx*bend*0.7, source[1]+0.70*dy+ny*bend*0.7), tip)
+    twig = _fixed_spline(graph, controls)
+    start = min(3.6, max(2.2, 0.55*root_width))
+    graph.add_thread(twig, "SCAFFOLD", env=True,
+                     styles=_twig_styles(len(twig)-1, rng, start_width=start, end_width=1.3))
+    if fork and len(twig) > 4:
+        base = graph.position(twig[len(twig)//2])
+        angle = math.atan2(dy, dx) - bend_sign*0.62
+        spur_length = 0.38*span
+        spur_tip = (base[0]+spur_length*math.cos(angle), base[1]+spur_length*math.sin(angle))
+        spur = _fixed_spline(graph, (base, point_on(base, spur_tip, 0.35),
+                                     point_on(base, spur_tip, 0.7), spur_tip))
+        graph.add_thread([twig[len(twig)//2]]+spur[1:], "SCAFFOLD", env=True,
+                         styles=_twig_styles(len(spur)-1, rng, start_width=0.8*start,
+                                             end_width=1.0))
+    return twig[-1]
+
+
+def orb_scaffold(graph: PlanGraph, polygon, rng, branches, shared=()):
+    """Compose 2–5 long branches; frame corners sit on bark or on short side twigs.
+
+    ``shared`` corners are left as None for the colony to attach to earlier silk.
+    """
+    if not 2 <= len(branches) <= 5:
+        raise ValueError("an orb requires two to five scaffold branches")
+    if tuple(polygon) != frame_polygon(branches, {i: polygon[i] for i in shared}):
+        raise ValueError("frame polygon must come from frame_polygon(branches)")
     anchors = [None]*len(polygon)
     arrival = None
     for branch in branches:
-        if not 4 <= len(branch.controls) <= 7 or len(branch.anchors) < 2:
-            raise ValueError("each branch needs 4–7 controls and at least two anchors")
+        if not 4 <= len(branch.controls) <= 7 or not branch.anchors:
+            raise ValueError("each branch needs 4–7 controls and at least one anchor")
+        points = catmull_rom(branch.controls, interval=8)
         trunk = _fixed_spline(graph, branch.controls)
         trunk_styles = _twig_styles(len(trunk)-1, rng)
         graph.add_thread(trunk, "SCAFFOLD", env=True, styles=trunk_styles)
-        for index, fraction in branch.anchors:
-            if anchors[index] is not None or not 0 <= fraction <= 1:
-                raise ValueError("duplicate anchor or invalid branch position")
-            start_at = trunk[round(fraction*(len(trunk)-1))]
-            tip = polygon[index]
-            source = graph.position(start_at)
-            dx, dy = tip[0]-source[0], tip[1]-source[1]
-            normal = (-dy, dx)
-            norm = max(math.hypot(*normal), 1)
-            bend = 0.055*math.hypot(dx, dy)
-            controls = (source,
-                        (source[0]+0.34*dx+normal[0]*bend/norm,
-                         source[1]+0.34*dy+normal[1]*bend/norm),
-                        (source[0]+0.71*dx-normal[0]*bend/norm,
-                         source[1]+0.71*dy-normal[1]*bend/norm), tip)
-            fork = _fixed_spline(graph, controls)
-            width_at_root = trunk_styles[
-                min(len(trunk_styles)-1, round(fraction*(len(trunk)-1)))][0]
-            graph.add_thread(fork, "SCAFFOLD", env=True,
-                             styles=_twig_styles(len(fork)-1, rng, start_width=width_at_root))
-            anchors[index] = fork[-1]
+        for index, target in branch.anchors:
+            if anchors[index] is not None:
+                raise ValueError("duplicate frame anchor")
+            at, corner, twig_length = _resolve(points, target)
+            if twig_length == 0:
+                anchors[index] = trunk[at]
+            else:
+                anchors[index] = _side_twig(
+                    graph, rng, points[at], corner,
+                    trunk_styles[min(at, len(trunk_styles)-1)][0],
+                    1 if index % 2 else -1, fork=twig_length > 45 and index % 3 == 0)
             if index == 0:
                 arrival = trunk[0]
         for number, fraction in enumerate((0.27, 0.66)):
@@ -123,6 +185,7 @@ def orb_scaffold(graph: PlanGraph, polygon, rng, branches):
                              styles=_twig_styles(len(twiglet)-1, rng, start_width=3.2))
         for fraction, size, angle in branch.leaves:
             _leaf(graph, trunk[round(fraction*(len(trunk)-1))], size, angle)
-    if any(anchor is None for anchor in anchors) or arrival is None:
+    if any((anchor is None) != (i in shared) for i, anchor in enumerate(anchors)) \
+            or arrival is None:
         raise ValueError("every frame anchor needs a scaffold connection")
     return anchors, arrival

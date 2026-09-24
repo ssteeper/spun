@@ -104,6 +104,15 @@ def relax(graph, radial_paths, mean_radius):
     elif _new_crossing(graph, original, position):
         reason = "new crossing in surviving network"
     if reason == "accepted":
+        # Tufts ride on the frame: their free interior follows the mean shift of
+        # the two frame knots they hang from, so a tuft keeps its shape and length.
+        for thread in graph.threads:
+            if thread.kind == "TUFT":
+                shift = (position[thread.path[0]]-original[thread.path[0]] +
+                         position[thread.path[-1]]-original[thread.path[-1]])/2
+                for node in thread.path[1:-1]:
+                    if not fixed[node]:
+                        position[node] = original[node]+shift
         for node, point in zip(graph.nodes, position):
             node.point = (float(point[0]), float(point[1]))
     # Rejected equilibrium leaves *all* nodes at their original planned locations.
