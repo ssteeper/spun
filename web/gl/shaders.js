@@ -98,8 +98,10 @@ layout(location = 0) in vec3 a_bead;      // x, y, r (native px)
 layout(location = 1) in uvec2 a_host;     // host index, host death
 layout(location = 2) in vec4 a_hostColor; // r, g, b, alpha (normalized bytes)
 layout(location = 3) in vec4 a_meta;      // host lod, host flags, bead flags, 0
+layout(location = 4) in float a_u;        // dew delay fraction u_i = hash32(i)/2^32
 uniform vec3 u_xform;
 uniform float u_minLod;
+uniform float u_dewAge; // seconds since the dew clock origin; < 0 hides dew
 ${DEVICE_TO_CLIP}
 ${FADE}
 flat out vec2 v_center;
@@ -111,7 +113,13 @@ void main() {
   int hostFlags = int(a_meta.y);
   int beadFlags = int(a_meta.z);
   float fade = fadeAt(a_host.y);
-  bool visible = float(a_host.x) < floor(u_cursor) && (beadFlags & 2) != 0 && (hostFlags & 4) == 0 &&
+  bool glue = (beadFlags & 2) != 0;
+  float progress = 1.0;
+  if (!glue) {
+    float t = u_dewAge < 0.0 ? 0.0 : clamp((u_dewAge - 2.4 * a_u) / 0.35, 0.0, 1.0);
+    progress = 1.0 - pow(1.0 - t, 3.0);
+  }
+  bool visible = float(a_host.x) < floor(u_cursor) && progress > 0.0 && (hostFlags & 4) == 0 &&
     a_meta.x >= u_minLod && fade > 0.0 && a_bead.z > 0.0;
   if (!visible) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -119,7 +127,7 @@ void main() {
     return;
   }
   vec2 c = u_xform.xy + a_bead.xy * u_xform.z;
-  float r = a_bead.z * u_xform.z;
+  float r = a_bead.z * progress * u_xform.z;
   float ext = r + 1.5;
   int v = gl_VertexID;
   vec2 p = c + vec2((v & 1) == 0 ? -ext : ext, v < 2 ? -ext : ext);
@@ -186,4 +194,13 @@ void main() {
   }
   o_color = sum;
 }
+`;
+
+export const BACKGROUND_FS = `#version 300 es
+precision highp float;
+uniform vec3 u_top;
+uniform vec3 u_bottom;
+in vec2 v_uv;
+out vec4 o_color;
+void main() { o_color = vec4(mix(u_bottom, u_top, v_uv.y), 1.0); }
 `;

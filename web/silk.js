@@ -86,6 +86,7 @@ export function parseSilk(rawBuffer, specimen = null) {
   const beadY = new Float32Array(beadCount);
   const beadStart = new Uint32Array(count);
   const beadEnd = new Uint32Array(count);
+  const beadU = new Float32Array(beadCount);
   let previousHost = -1;
   let previousPosition = -1;
   for (let i = 0; i < beadCount; i++) {
@@ -102,6 +103,7 @@ export function parseSilk(rawBuffer, specimen = null) {
     beadT[i] = t;
     beadRadii[i] = radius;
     beadFlags[i] = flags;
+    beadU[i] = hash32(i) / 4294967296;
     beadX[i] = coords[p] + (coords[p + 2] - coords[p]) * t;
     beadY[i] = coords[p + 1] + (coords[p + 3] - coords[p + 1]) * t;
     if (host !== previousHost) beadStart[host] = i;
@@ -113,7 +115,7 @@ export function parseSilk(rawBuffer, specimen = null) {
   return {
     rawBuffer, count, beadCount, width, height, coordScale, widthScale, builderCount,
     coords, deaths, styles, lengths, cumulativeLength, builderLengths, colors, widths, alphas,
-    temporary: Uint32Array.from(temporary), beadHosts, beadT, beadRadii, beadFlags, beadX, beadY, beadStart, beadEnd,
+    temporary: Uint32Array.from(temporary), beadHosts, beadT, beadRadii, beadFlags, beadX, beadY, beadU, beadStart, beadEnd,
     specimen,
     cursorAt(seconds) { return cursorAt(specimen, seconds, count); },
     labelAt(cursor) { return labelAt(specimen, cursor, count); },
@@ -144,6 +146,14 @@ export function labelAt(specimen, cursor, count = specimen?.segments ?? 0) {
     label = specimen.stages[i].label;
   }
   return label;
+}
+
+// Dew bead growth (0..1, ease-out cubic): starts at 2.4 s·u and grows over 0.35 s.
+export const DEW_DELAY = 2.4;
+export const DEW_GROW = 0.35;
+export function dewProgress(age, u) {
+  const t = Math.max(0, Math.min(1, (age - DEW_DELAY * u) / DEW_GROW));
+  return 1 - (1 - t) ** 3;
 }
 
 export function minLod(detail) {

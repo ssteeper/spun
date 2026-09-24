@@ -27,6 +27,7 @@ const ui = new ViewerUI({
   onSelect(id) { selectedId = id; },
   onClear() { manager?.clear(); ui.clear(); },
   onBackend(value) { manager?.setBackend(value); },
+  onMode(value) { manager?.setMode(value); },
 });
 
 const stage = new Stage(stageElement, webCanvas, overlayCanvas, glCanvas, () => manager?.resize());
@@ -105,13 +106,25 @@ if (debugEnabled) {
     seek(seconds) { manager.seek(seconds); },
     resume() { manager.resume(); },
     setBackend(value) { return manager.setBackend(value); },
-    setMode(value) { return manager.setMode(value); },
+    setMode(value) { const ok = manager.setMode(value); if (ok) ui.setMode(value); return ok; },
     setGlow(value) { for (const renderer of Object.values(renderers)) renderer.setGlow(value); manager.requestFrame(); },
     glContext() { return glRenderer?.gl ?? null; },
     clear() { manager.clear(); },
     stats() { return manager.stats(); },
     decoded(id) { return manager.decodedCounts(id); },
   };
+}
+
+if ("serviceWorker" in navigator) {
+  if (query.get("nosw") === "1") {
+    navigator.serviceWorker.getRegistrations()
+      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+      .catch(error => console.warn("Service worker cleanup failed.", error));
+  } else {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Offline support unavailable.", error));
+    }, { once: true });
+  }
 }
 
 window.addEventListener("beforeunload", () => stage.destroy(), { once: true });

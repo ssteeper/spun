@@ -49,7 +49,7 @@ const CHIP_LABELS = Object.freeze({
 });
 
 export class ViewerUI {
-  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup, backendGroup }, { onSelect, onClear, onBackend = () => {} }) {
+  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup, backendGroup }, { onSelect, onClear, onBackend = () => {}, onMode = () => {} }) {
     this.rows = rows;
     this.status = status;
     this.liveStatus = liveStatus;
@@ -61,11 +61,15 @@ export class ViewerUI {
     this.pendingLive = null;
     this.liveTimer = 0;
     clearButton.addEventListener("click", onClear);
-    this.modeGroup = makeRadioGroup(modeGroup, () => {});
+    this.modeGroup = makeRadioGroup(modeGroup, value => onMode(value));
     this.backendGroup = makeRadioGroup(backendGroup, value => onBackend(value));
     window.addEventListener("keydown", event => {
       if (event.key === "Escape") onClear();
     });
+  }
+
+  setMode(mode) {
+    this.modeGroup.mark(this.modeGroup.buttons.find(button => button.dataset.value === mode));
   }
 
   setBackendState(glAvailable, backend) {

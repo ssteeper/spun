@@ -1,5 +1,5 @@
 import { minLod } from "../silk.js";
-import { RECORD_VS, RECORD_FS, BEAD_VS, BEAD_FS, QUAD_VS, COPY_FS, BLUR_FS } from "./shaders.js";
+import { RECORD_VS, RECORD_FS, BEAD_VS, BEAD_FS, QUAD_VS, COPY_FS, BLUR_FS, BACKGROUND_FS } from "./shaders.js";
 
 const HEADER_BYTES = 32;
 const RECORD_BYTES = 20;
@@ -59,6 +59,7 @@ export class GLRenderer {
     this.stageConfig = null;
     this.onRestored = onRestored;
     this.glowEnabled = true;
+    this.mode = "dusk";
     this.lost = false;
     this.recordsDrawnLastFrame = 0;
     this.beadsDrawnLastFrame = 0;
@@ -90,6 +91,7 @@ export class GLRenderer {
     this.beadProgram = this.program(BEAD_VS, BEAD_FS);
     this.copyProgram = this.program(QUAD_VS, COPY_FS);
     this.blurProgram = this.program(QUAD_VS, BLUR_FS);
+    this.backgroundProgram = this.program(QUAD_VS, BACKGROUND_FS);
     this.quadVao = gl.createVertexArray();
     this.floatTargets = Boolean(gl.getExtension("EXT_color_buffer_float"));
     this.resources = new WeakMap();
@@ -173,6 +175,7 @@ export class GLRenderer {
         u8[o + 24] = data.styles[s + 5];
         u8[o + 25] = data.styles[s + 6];
         u8[o + 26] = data.beadFlags[b];
+        f32[o / 4 + 7] = data.beadU[b];
       }
       beadVao = gl.createVertexArray();
       const beadVbo = gl.createBuffer();
@@ -188,7 +191,9 @@ export class GLRenderer {
       gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, BEAD_STRIDE, 20);
       gl.enableVertexAttribArray(3);
       gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, false, BEAD_STRIDE, 24);
-      for (let i = 0; i < 4; i++) gl.vertexAttribDivisor(i, 1);
+      gl.enableVertexAttribArray(4);
+      gl.vertexAttribPointer(4, 1, gl.FLOAT, false, BEAD_STRIDE, 28);
+      for (let i = 0; i < 5; i++) gl.vertexAttribDivisor(i, 1);
     }
     gl.bindVertexArray(null);
     resources = { recordVao, beadVao };
@@ -303,6 +308,7 @@ export class GLRenderer {
         gl.uniform2f(bead.uniforms.u_viewport, width, height);
         gl.uniform3f(bead.uniforms.u_xform, ...xform);
         gl.uniform1f(bead.uniforms.u_minLod, threshold);
+        gl.uniform1f(bead.uniforms.u_dewAge, placement.detail < 0.35 ? -1 : instance.dewAge);
         gl.uniform1f(bead.uniforms.u_cursor, cursor);
         gl.uniform1f(bead.uniforms.u_N, data.count);
         gl.uniform1f(bead.uniforms.u_fadeRecords, fadeRecords);
@@ -336,14 +342,20 @@ export class GLRenderer {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
-    const [r, g, bl] = hexColor(this.stageConfig?.background, "05060c");
-    gl.clearColor(r, g, bl, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    const dusk = hexColor(this.stageConfig?.background, "05060c");
+    const dawn = this.mode === "dawn";
+    const top = dawn ? hexColor(this.stageConfig?.dawn?.top, "0b1124") : dusk;
+    const bottom = dawn ? hexColor(this.stageConfig?.dawn?.bottom, "1d1521") : dusk;
+    gl.disable(gl.BLEND);
+    this.drawQuad(this.backgroundProgram, null, {
+      u_top: l => gl.uniform3f(l, ...top),
+      u_bottom: l => gl.uniform3f(l, ...bottom),
+    });
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     this.drawQuad(this.copyProgram, targets.sharp.texture, { u_gain: l => gl.uniform1f(l, 1) });
     if (glow) {
-      const strength = (this.stageConfig?.glow?.strength ?? 0.5) * (instances.at(-1)?.mode === "dawn" ? 1.2 : 1);
+      const strength = (this.stageConfig?.glow?.strength ?? 0.5) * (this.mode === "dawn" ? 1.2 : 1);
       gl.blendFunc(gl.ONE, gl.ONE);
       this.drawQuad(this.copyProgram, targets.a.texture, { u_gain: l => gl.uniform1f(l, strength) });
     }

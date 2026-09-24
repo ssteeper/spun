@@ -1,4 +1,4 @@
-import { minLod } from "../silk.js";
+import { minLod, dewProgress } from "../silk.js";
 
 const FLAG_INVISIBLE = 1 << 2;
 const BEAD_GLUE = 2;
@@ -27,6 +27,7 @@ export class Renderer2D {
     this.stageConfig = stageConfig;
     this.ctx = stage.ctx;
     this.glowEnabled = true;
+    this.mode = "dusk";
     this.recordsDrawnLastFrame = 0;
     this.beadsDrawnLastFrame = 0;
     this.temporaryRecordsDrawnLastFrame = 0;
@@ -45,7 +46,7 @@ export class Renderer2D {
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#05060c";
+    ctx.fillStyle = this.backgroundStyle(height);
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
     this.recordsDrawnLastFrame = 0;
@@ -54,10 +55,12 @@ export class Renderer2D {
     for (const instance of instances) {
       if (!instance.buffers || instance.buffers.invalid) this.createBuffers(instance);
       this.updatePermanent(instance);
+      this.updateDew(instance);
       this.drawDynamic(instance);
-      const { permanent, dynamic, deviceLeft, deviceTop } = instance.buffers;
+      const { permanent, dew, dynamic, deviceLeft, deviceTop } = instance.buffers;
       const dpr = this.stage.dpr;
       ctx.drawImage(permanent, deviceLeft / dpr, deviceTop / dpr, permanent.width / dpr, permanent.height / dpr);
+      if (instance.buffers.dewBaked > 0) ctx.drawImage(dew, deviceLeft / dpr, deviceTop / dpr, dew.width / dpr, dew.height / dpr);
       ctx.drawImage(dynamic, deviceLeft / dpr, deviceTop / dpr, dynamic.width / dpr, dynamic.height / dpr);
     }
     if (!this.glowEnabled) return;
@@ -68,7 +71,7 @@ export class Renderer2D {
       const dpr = this.stage.dpr;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = (this.stageConfig?.glow?.strength ?? 0.5) * (instance.mode === "dawn" ? 1.2 : 1);
+      ctx.globalAlpha = (this.stageConfig?.glow?.strength ?? 0.5) * (this.mode === "dawn" ? 1.2 : 1);
       ctx.drawImage(glow, (deviceLeft - glowPad * 2) / dpr, (deviceTop - glowPad * 2) / dpr, glow.width * 2 / dpr, glow.height * 2 / dpr);
       ctx.restore();
     }
@@ -88,6 +91,8 @@ export class Renderer2D {
     const glowPad = Math.ceil(3 * radius * 0.5 * dpr);
     const permanent = makeCanvas(pixelWidth, pixelHeight);
     const dynamic = makeCanvas(pixelWidth, pixelHeight);
+    const dew = makeCanvas(pixelWidth, pixelHeight);
+    const dewCtx = dew.getContext("2d");
     const combined = makeCanvas(pixelWidth, pixelHeight);
     const glow = makeCanvas(glowWidth + glowPad * 2, glowHeight + glowPad * 2);
     const permanentCtx = permanent.getContext("2d");
@@ -97,16 +102,21 @@ export class Renderer2D {
     const linear = instance.placement.scale * dpr;
     const tx = instance.placement.originX * dpr - deviceLeft;
     const ty = instance.placement.originY * dpr - deviceTop;
-    for (const layerCtx of [permanentCtx, dynamicCtx]) layerCtx.setTransform(linear, 0, 0, linear, tx, ty);
+    for (const layerCtx of [permanentCtx, dynamicCtx, dewCtx]) layerCtx.setTransform(linear, 0, 0, linear, tx, ty);
     combinedCtx.setTransform(1, 0, 0, 1, 0, 0);
     glowCtx.setTransform(1, 0, 0, 1, 0, 0);
     instance.buffers = {
-      permanent, dynamic, combined, glow,
-      permanentCtx, dynamicCtx, combinedCtx, glowCtx,
+      permanent, dynamic, combined, glow, dew,
+      permanentCtx, dynamicCtx, combinedCtx, glowCtx, dewCtx,
       builtThrough: -1,
-      dynamicCursor: NaN,
+      dynamicKey: "",
+      dewAge: -1,
+      dewBaked: 0,
+      dewDone: false,
+      dewBakedFlags: new Uint8Array(instance.data.beadCount),
+      dewGrowing: [],
       glowUsable: "filter" in glowCtx,
-      glowCursor: NaN,
+      glowKey: "",
       glowPad, deviceLeft, deviceTop,
       glowWidth,
       glowHeight,
@@ -147,10 +157,68 @@ export class Renderer2D {
     buffers.builtThrough = Math.max(buffers.builtThrough, complete);
   }
 
-  // Dynamic layer: live/fading temporaries plus the tip, redrawn only when the cursor moves.
+  backgroundStyle(height) {
+    const stage = this.stageConfig;
+    if (this.mode !== "dawn") return stage?.background || "#05060c";
+    const gradient = this.ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, stage?.dawn?.top || "#0b1124");
+    gradient.addColorStop(1, stage?.dawn?.bottom || "#1d1521");
+    return gradient;
+  }
+
+  clearDew(buffers) {
+    const ctx = buffers.dewCtx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, buffers.dew.width, buffers.dew.height);
+    ctx.restore();
+    buffers.dewBakedFlags.fill(0);
+    buffers.dewBaked = 0;
+    buffers.dewDone = false;
+    buffers.dewGrowing = [];
+  }
+
+  // Dew layer: dew beads bake in once fully grown; beads still growing are listed for the dynamic layer.
+  updateDew(instance) {
+    const { data, buffers, placement } = instance;
+    const age = placement.detail < 0.35 ? -1 : instance.dewAge;
+    if (age < 0) {
+      if (buffers.dewAge >= 0 || buffers.dewBaked > 0) this.clearDew(buffers);
+      buffers.dewAge = -1;
+      return;
+    }
+    if (age < buffers.dewAge) this.clearDew(buffers);
+    if (age === buffers.dewAge || buffers.dewDone) {
+      buffers.dewAge = age;
+      return;
+    }
+    buffers.dewAge = age;
+    const threshold = minLod(placement.detail);
+    const growing = [];
+    let pending = false;
+    for (let b = 0; b < data.beadCount; b++) {
+      if ((data.beadFlags[b] & BEAD_GLUE) || buffers.dewBakedFlags[b]) continue;
+      const host = data.beadHosts[b];
+      if ((data.styles[host * 8 + 6] & FLAG_INVISIBLE) || !lodVisible(data, host, threshold)) continue;
+      const progress = dewProgress(age, data.beadU[b]);
+      if (progress >= 1) {
+        this.drawBead(buffers.dewCtx, instance, b, 1);
+        buffers.dewBakedFlags[b] = 1;
+        buffers.dewBaked++;
+      } else {
+        pending = true;
+        if (progress > 0) growing.push(b, progress);
+      }
+    }
+    buffers.dewGrowing = growing;
+    buffers.dewDone = !pending;
+  }
+
+  // Dynamic layer: live/fading temporaries, the tip and growing dew, redrawn only when the cursor or dew clock moves.
   drawDynamic(instance) {
     const { data, cursor, buffers } = instance;
-    if (buffers.dynamicCursor === cursor) return;
+    const key = `${cursor}|${instance.dewAge}`;
+    if (buffers.dynamicKey === key) return;
     const ctx = buffers.dynamicCtx;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -184,8 +252,10 @@ export class Renderer2D {
         if (data.deaths[completed] !== 0xffffffff) this.temporaryRecordsDrawnLastFrame++;
       }
     }
-    buffers.dynamicCursor = cursor;
-    buffers.glowCursor = NaN;
+    for (let n = 0; n < buffers.dewGrowing.length; n += 2) {
+      if (this.drawBead(ctx, instance, buffers.dewGrowing[n], buffers.dewGrowing[n + 1])) this.beadsDrawnLastFrame++;
+    }
+    buffers.dynamicKey = key;
   }
 
   strokeRecord(ctx, data, index, alpha, scale, fraction = 1) {
@@ -247,10 +317,12 @@ export class Renderer2D {
 
   updateGlow(instance) {
     const buffers = instance.buffers;
-    if (buffers.glowCursor === instance.cursor) return;
+    const key = `${instance.cursor}|${instance.dewAge}`;
+    if (buffers.glowKey === key) return;
     const { combinedCtx, combined, glowCtx, glow, glowPad, glowWidth, glowHeight } = buffers;
     combinedCtx.clearRect(0, 0, combined.width, combined.height);
     combinedCtx.drawImage(buffers.permanent, 0, 0);
+    if (buffers.dewBaked > 0) combinedCtx.drawImage(buffers.dew, 0, 0);
     combinedCtx.drawImage(buffers.dynamic, 0, 0);
     glowCtx.save();
     glowCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -259,6 +331,6 @@ export class Renderer2D {
     glowCtx.filter = `blur(${radius * 0.5 * this.stage.dpr}px)`;
     glowCtx.drawImage(combined, 0, 0, combined.width, combined.height, glowPad, glowPad, glowWidth, glowHeight);
     glowCtx.restore();
-    buffers.glowCursor = instance.cursor;
+    buffers.glowKey = key;
   }
 }

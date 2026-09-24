@@ -3,6 +3,7 @@ import { parseSilk } from "../silk.js";
 const INSTANCE_LIMIT = 12;
 const INSET = 4;
 const REST_SECONDS = 0.5;
+const DEW_SECONDS = 2.4 + 0.35; // latest start 2.4 s·u_i plus 0.35 s growth
 const ENV = 1 << 1;
 
 function timeAtCursor(specimen, target) {
@@ -116,7 +117,8 @@ export class InstanceManager {
       duration: Math.max(0, Number(specimen.durationSeconds) || 0),
       cursor: 0,
       label: data.labelAt(0),
-      mode: this.mode,
+      dewOrigin: null,
+      dewAge: -1,
       reducedMotion: this.reducedMotion,
       builderFirst: builderInfo.first,
       builderLast: builderInfo.last,
@@ -127,7 +129,8 @@ export class InstanceManager {
       normalizedX: this.stage.width ? x / this.stage.width : 0.5,
       normalizedY: this.stage.height ? y / this.stage.height : 0.5,
     };
-    if (instance.reducedMotion) instance.elapsed = instance.duration + REST_SECONDS;
+    if (this.mode === "dawn") instance.dewOrigin = instance.duration;
+    if (instance.reducedMotion) instance.elapsed = this.endTime(instance);
     this.place(instance);
     if (this.instances.length === INSTANCE_LIMIT) {
       const removed = this.instances.shift();
@@ -186,6 +189,33 @@ export class InstanceManager {
     if (instance.buffers) this.renderers["2d"].invalidate(instance);
   }
 
+  endTime(instance) {
+    const settled = instance.duration + REST_SECONDS;
+    return instance.dewOrigin == null ? settled : Math.max(settled, instance.dewOrigin + DEW_SECONDS);
+  }
+
+  advance() {
+    for (const instance of this.instances) {
+      instance.cursor = instance.data.cursorAt(Math.min(instance.duration, instance.elapsed));
+      instance.label = instance.data.labelAt(instance.cursor);
+      const complete = instance.cursor >= instance.data.count;
+      instance.dewAge = complete && instance.dewOrigin != null ? Math.max(-1, instance.elapsed - instance.dewOrigin) : -1;
+    }
+  }
+
+  dewVisible(instance) {
+    if (instance.dewAge < 0 || instance.placement.detail < 0.35) return 0;
+    const { data } = instance;
+    const threshold = data.minLod(instance.placement.detail);
+    let count = 0;
+    for (let b = 0; b < data.beadCount; b++) {
+      if (data.beadFlags[b] & 2) continue;
+      if (data.styles[data.beadHosts[b] * 8 + 5] < threshold) continue;
+      if (instance.dewAge > 2.4 * data.beadU[b]) count++;
+    }
+    return count;
+  }
+
   resize() {
     for (const instance of this.instances) this.place(instance);
     this.requestFrame();
@@ -204,18 +234,15 @@ export class InstanceManager {
     this.lastTimestamp = timestamp;
     if (delta > 0) {
       for (const instance of this.instances) {
-        instance.elapsed = Math.min(instance.duration + REST_SECONDS, instance.elapsed + delta);
+        instance.elapsed = Math.min(this.endTime(instance), instance.elapsed + delta);
       }
     }
-    for (const instance of this.instances) {
-      instance.cursor = instance.data.cursorAt(Math.min(instance.duration, instance.elapsed));
-      instance.label = instance.data.labelAt(instance.cursor);
-    }
+    this.advance();
     this.renderer.render(this.instances);
     this.overlay.draw(this.instances);
     this.framesRendered++;
     this.updateStatus(timestamp);
-    if (!this.frozen && this.instances.some(instance => instance.elapsed < instance.duration + REST_SECONDS)) {
+    if (!this.frozen && this.instances.some(instance => instance.elapsed < this.endTime(instance))) {
       this.rafId = requestAnimationFrame(next => this.frame(next));
       return;
     }
@@ -238,17 +265,14 @@ export class InstanceManager {
 
   seek(seconds) {
     if (seconds === "end") {
-      for (const instance of this.instances) instance.elapsed = instance.duration + REST_SECONDS;
+      for (const instance of this.instances) instance.elapsed = this.endTime(instance);
     } else {
       const value = Math.max(0, Number(seconds) || 0);
-      for (const instance of this.instances) instance.elapsed = Math.min(instance.duration + REST_SECONDS, value);
+      for (const instance of this.instances) instance.elapsed = Math.min(this.endTime(instance), value);
     }
     this.frozen = true;
     this.lastTimestamp = null;
-    for (const instance of this.instances) {
-      instance.cursor = instance.data.cursorAt(Math.min(instance.duration, instance.elapsed));
-      instance.label = instance.data.labelAt(instance.cursor);
-    }
+    this.advance();
     this.updateStatus();
     this.requestFrame();
   }
@@ -283,9 +307,21 @@ export class InstanceManager {
   }
 
   setMode(value) {
-    if (value !== "dusk") return false;
-    this.mode = "dusk";
-    for (const instance of this.instances) instance.mode = this.mode;
+    if (value !== "dusk" && value !== "dawn") return false;
+    if (value === this.mode) return true;
+    this.mode = value;
+    for (const renderer of Object.values(this.renderers)) renderer.mode = value;
+    for (const instance of this.instances) {
+      if (value === "dawn") {
+        // Dew clock origin: the later of the web's completion and the moment Dawn was switched on.
+        instance.dewOrigin = Math.max(instance.duration, instance.elapsed);
+        if (instance.reducedMotion) instance.elapsed = this.endTime(instance);
+      } else {
+        instance.dewOrigin = null;
+        instance.elapsed = Math.min(instance.elapsed, this.endTime(instance));
+      }
+    }
+    this.advance();
     this.requestFrame();
     return true;
   }
@@ -302,12 +338,15 @@ export class InstanceManager {
       instances: this.instances.length,
       rafActive: this.rafActive,
       framesRendered: this.framesRendered,
-      glBufferUploadsLastFrame: this.renderers.gl?.glBufferUploadsLastFrame ?? 0,
+      glBufferUploadsLastFrame: this.backend === "gl" ? this.renderers.gl.glBufferUploadsLastFrame : 0,
       glBufferUploadsTotal: this.renderers.gl?.glBufferUploadsTotal ?? 0,
       recordsDrawnLastFrame: this.renderer.recordsDrawnLastFrame,
       temporaryRecordsDrawnLastFrame: this.renderer.temporaryRecordsDrawnLastFrame,
       beadsDrawnLastFrame: this.renderer.beadsDrawnLastFrame,
       glRenderer: this.renderers.gl?.rendererName ?? null,
+      mode: this.mode,
+      dewVisible: this.instances.reduce((sum, instance) => sum + this.dewVisible(instance), 0),
+      dewAges: this.instances.map(instance => instance.dewAge),
       decodedCounts: Object.fromEntries([...this.assets].filter(([, data]) => !(data instanceof Promise)).map(([id, data]) => [id, { segments: data.count, beads: data.beadCount }])),
       cursors: this.instances.map(instance => ({ id: instance.specimen.id, cursor: instance.cursor, elapsed: instance.elapsed, label: instance.label })),
       placements: this.instances.map(instance => ({
