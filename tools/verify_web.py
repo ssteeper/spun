@@ -85,14 +85,6 @@ def stage_range(spec: dict, label: str):
     return None
 
 
-def seg_distance(p, a, b) -> float:
-    ax, ay = a; bx, by = b; px, py = p
-    dx, dy = bx - ax, by - ay
-    denom = dx * dx + dy * dy
-    h = 0.0 if denom == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / denom))
-    return math.hypot(px - ax - dx * h, py - ay - dy * h)
-
-
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -347,16 +339,24 @@ def check_settle(h: Harness):
 
 def pick_probe(record, others, scale, avoid, min_gap_px=4.0, avoid_px=30.0):
     """Point on `record` far from other drawn records and from `avoid` points (native coords)."""
+    if others:
+        a = np.array([o["p0"] for o in others], dtype=np.float64)
+        d = np.array([o["p1"] for o in others], dtype=np.float64) - a
+        dd = np.maximum((d * d).sum(axis=1), 1e-12)
     best = None
     for k in range(1, 20):
         f = k / 20
         p = (record["p0"][0] + (record["p1"][0] - record["p0"][0]) * f, record["p0"][1] + (record["p1"][1] - record["p0"][1]) * f)
-        gap = min((seg_distance(p, o["p0"], o["p1"]) for o in others), default=1e9) * scale
-        far = min((math.dist(p, a) for a in avoid), default=1e9) * scale
+        if others:
+            pa = np.array(p) - a
+            h = np.clip((pa * d).sum(axis=1) / dd, 0.0, 1.0)
+            gap = float(np.sqrt(((pa - d * h[:, None]) ** 2).sum(axis=1)).min()) * scale
+        else:
+            gap = 1e9
+        far = min((math.dist(p, q) for q in avoid), default=1e9) * scale
         if gap >= min_gap_px and far >= avoid_px and (best is None or gap > best[1]):
             best = (p, gap)
     return best
-
 
 def fade_alpha(record, cursor, spec, count):
     """§9.3 death fade at `cursor` (1 before death)."""
@@ -377,7 +377,8 @@ def check_eating(h: Harness):
     golden = h.specs.get("golden-orb-weaver")
     if not argiope or not golden:
         return None, {"reason": "argiope or golden missing from index.json"}, []
-    ctx, page, log = h.context()
+    dpr = 3  # probe in device pixels so thin threads in dense real webs stay separable
+    ctx, page, log = h.context(device_scale_factor=dpr)
     try:
         page.evaluate("window.__spun.setGlow(false)")
         # Argiope: a dying AUX record visible mid-capture, gone at the end.
@@ -396,8 +397,9 @@ def check_eating(h: Harness):
             tip = data["records"][min(int(mid), data["count"] - 1)]["p1"]
             chosen = None
             for r in sorted(candidates, key=lambda r: -math.dist(r["p0"], r["p1"])):
-                others = [o for o in data["records"] if o["i"] != r["i"] and not o["flags"] & FLAG_INVISIBLE and o["i"] < mid]
-                pick = pick_probe(r, others, scale, rests + [tip])
+                others = [o for o in data["records"] if o["i"] != r["i"] and not o["flags"] & FLAG_INVISIBLE
+                          and (o["i"] < mid or o["death"] == NEVER)]
+                pick = pick_probe(r, others, scale * dpr, rests + [tip], min_gap_px=3.0, avoid_px=30.0 * dpr)
                 if pick:
                     chosen = (r, pick)
                     break
@@ -411,11 +413,11 @@ def check_eating(h: Harness):
             img_mid = shot(page)
             h.seek(page, "end"); h.settle(page)
             img_end = shot(page)
-            v_mid, v_end = probe(img_mid, sx, sy), probe(img_end, sx, sy)
+            v_mid, v_end = probe(img_mid, sx * dpr, sy * dpr), probe(img_end, sx * dpr, sy * dpr)
             good = v_mid > 12 and v_end <= 6
             ok &= good
             numbers[f"argiope:{backend}"] = {"record": r["i"], "death": r["death"], "cursor": round(mid, 3), "fadeAlphaMid": round(fade_alpha(r, mid, argiope, data["count"]), 3), "probe": [round(sx, 1), round(sy, 1)],
-                                            "clearancePx": round(gap, 2), "deltaMid": v_mid, "deltaEnd": v_end}
+                                            "clearanceDevicePx": round(gap, 2), "dpr": dpr, "deltaMid": v_mid, "deltaEnd": v_end}
             if backend == "2d":
                 save(img_mid, "eating-argiope-mid.png", evidence)
                 save(img_end, "eating-argiope-end.png", evidence)
@@ -431,7 +433,7 @@ def check_eating(h: Harness):
             final = drawn_at_end(data)
             chosen = None
             for r in sorted((r for r in final if r["kind"] == KIND_AUX), key=lambda r: -math.dist(r["p0"], r["p1"])):
-                pick = pick_probe(r, [o for o in final if o["i"] != r["i"]], scale, rests)
+                pick = pick_probe(r, [o for o in final if o["i"] != r["i"]], scale * dpr, rests, min_gap_px=3.0, avoid_px=30.0 * dpr)
                 if pick:
                     chosen = (r, pick)
                     break
@@ -442,9 +444,9 @@ def check_eating(h: Harness):
             r, (p, gap) = chosen
             sx, sy = ox + p[0] * scale, oy + p[1] * scale
             img = shot(page)
-            value = probe(img, sx, sy)
+            value = probe(img, sx * dpr, sy * dpr)
             ok &= value > 12
-            numbers[f"golden:{backend}"] = {"record": r["i"], "probe": [round(sx, 1), round(sy, 1)], "clearancePx": round(gap, 2), "deltaEnd": value}
+            numbers[f"golden:{backend}"] = {"record": r["i"], "probe": [round(sx, 1), round(sy, 1)], "clearanceDevicePx": round(gap, 2), "dpr": dpr, "deltaEnd": value}
             if backend == "2d":
                 save(img, "eating-golden-end.png", evidence)
         page.evaluate("window.__spun.setGlow(true)")
