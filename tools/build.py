@@ -208,7 +208,7 @@ def main():
         if not INDEX.exists():
             parser.error("build the catalogue before requesting --markdown")
         entries=_read_entries()
-        print("| Spider | Scientific name | Kind | File | Signature | Rest | Threads | Beads | Silk (m) | Bytes |")
+        print("| Spider | Scientific name | Kind | File | Signature | Rest | Segments | Beads | Silk (m) | Bytes |")
         print("|---|---|---|---|---|---|---:|---:|---:|---:|")
         for specimen in CATALOGUE:
             entry=entries.get(specimen.id)
