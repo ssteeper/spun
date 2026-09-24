@@ -270,6 +270,8 @@ def plate(silk,entry,*,dawn=False,cursor=None,rest_progress=None):
 
 def _font(size,italic=False):
     options=("georgiai.ttf","Georgia Italic.ttf") if italic else ("georgia.ttf","Georgia.ttf")
+    # Gelasio (SIL OFL) is metric-compatible with Georgia, so the layout holds where Georgia is absent.
+    options+=(("Gelasio-Italic[wght].ttf",) if italic else ("Gelasio[wght].ttf",))
     options+=(("DejaVuSerif-Italic.ttf",) if italic else ("DejaVuSerif.ttf",))
     for name in options:
         try:

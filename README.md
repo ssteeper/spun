@@ -19,7 +19,7 @@ This table is the verbatim output of `.venv/Scripts/python.exe tools/build.py --
 | Garden Orb-weaver | *Hortophora transmarina* | orb | `hortophora.silk` | Heavy dusk frame, clear free zone and many capture turns | hub-rest | 5,170 | 12,876 | 44.8 | 206,440 |
 | Leaf-curling Spider | *Phonognatha graeffei* | orb | `phonognatha.silk` | Rolled leaf retreat near the hub | in-leaf | 5,989 | 15,590 | 34.1 | 244,532 |
 | Christmas Jewel Spider | *Austracantha minax* | orb | `austracantha.silk` | Three shared-support orbs with white silk tufts | hub-rest ×3 | 8,990 | 10,415 | 20.8 | 263,152 |
-| Scorpion-tailed Spider | *Arachnura higginsi* | orb | `arachnura.silk` | Empty upper V, signal line and seven woolly egg sacs | hub-tail | 6,295 | 7,266 | 15.5 | 184,060 |
+| Scorpion-tailed Spider | *Arachnura higginsi* | orb | `arachnura.silk` | Empty upper V, signal line and seven woolly egg sacs | hub-tail | 6,430 | 7,491 | 15.3 | 188,560 |
 | Net-casting Spider | *Deinopis subrufa* | snare | `deinopis.silk` | Small held rectangle of woolly cribellate silk | net | 2,681 | 400 | 1.6 | 56,852 |
 | Magnificent Spider | *Ordgarius magnificus* | snare | `ordgarius.silk` | Single bolas globule below the trapeze and spindle egg sacs | hanging | 953 | 143 | 0.7 | 20,236 |
 | Redback Spider | *Latrodectus hasselti* | snare | `latrodectus.silk` | Timber retreat, dense tangle and glued gumfoot bottoms | retreat | 1,976 | 499 | 6.0 | 43,544 |
@@ -52,7 +52,7 @@ Builders never interleave. The validator (`spun/validate.py`, rules 1–9) enfor
 
 `spun/scaffold.py` builds branches as centripetal Catmull–Rom curves through 4–7 controls, sampled every 8 px. They taper from 7 to 2 px in the bark gradient `#5b3f2a → #8a6a48`, with ±6% value noise from a bark RNG kept separate from the topology RNG. Side twiglets and lanceolate eucalypt leaves (margins, midrib, vein pairs) are added along them.
 
-- **Frame corners.** A corner within 12 px of bark sits on it. Otherwise a short, nearly straight side twig (≤ 90 px) carries it.
+- **Frame corners.** A corner within 12 px of bark sits on it. Otherwise a short, nearly straight side twig (≤ 105 px) carries it.
 - **Redback timber.** The rail, post, grain lines, ground and leaf litter are fixed polylines (`spun/snares.py`).
 - **Timing.** Scaffold records are `SCAFFOLD`/`ENV` and are emitted first.
 
@@ -244,21 +244,21 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 
 | file | sha256 |
 |---|---|
-| `arachnura.silk` | `e46c3aa11979e8042df11f37c2b79abfd1791aefbafce3b5f5517e88930a4828` |
+| `arachnura.silk` | `7f1ceb09b78559672745f49b4182633a9f7c4f278b72a7faf193208c78df3187` |
 | `argiope.silk` | `da0ad6272f374a46a762bd231854897fdd01eeaf4e959a6c1733c213d347b8eb` |
 | `austracantha.silk` | `e43263ff02f06cfa695d2b091e821b524980ee596d417d1d24e45dfdf1eae984` |
 | `deinopis.silk` | `0744f262c228dd8049362d1b3b79c906cc1cb292ea512051377743d841e99c78` |
 | `golden.silk` | `ac51f7b9e09c6b7cbc6c6ef0adbbfaa6ba2398410914bb80c643357666536ce0` |
 | `hortophora.silk` | `9c1a9daba5822f35f418f163faf90ab4a51e93f72a04b6847c57502e018b6ba3` |
-| `index.json` | `58d11a1f4a3c8e33ec393be39594cfaec9236ada2ad535800296e8e3ae6bf3a2` |
+| `index.json` | `aec455921f9294ceccd9d7352b4fa702a8156cb47b7b0150cc6c3274727f708f` |
 | `latrodectus.silk` | `8045beea8889cd7c27855a89b48a36286131cf667f033eb691fd9084ca52117e` |
 | `ordgarius.silk` | `27366c81c12a697a5f9aff01e73521262af9c392cbd07be5546a4ee1a75efff3` |
 | `phonognatha.silk` | `79b5bc72f6658d89be90e84341cfd7e19fd6809784ace4c853eb01c282e56436` |
 
 - **Budgets** (from the build table):
   - largest file: `golden.silk`, 616,432 B (≤ 640 KiB);
-  - catalogue (nine `.silk` files plus `index.json`): 1,983,463 B (≤ 3 MiB);
-  - `index.json` (110,343 B) plus the default `argiope.silk` (237,872 B): 348,215 B (≤ 400 KiB);
+  - catalogue (nine `.silk` files plus `index.json`): 1,987,957 B (≤ 3 MiB);
+  - `index.json` (110,337 B) plus the default `argiope.silk` (237,872 B): 348,209 B (≤ 400 KiB);
   - golden sits exactly at the 32,000-bead cap after deterministic thinning.
 - **Plates:** `tools/render.py` wrote dusk and dawn plates for all nine species plus both catalogue plates in `renders/`. Each plate was opened and critiqued; see Plate notes.
 - **Video:** ffmpeg is present on the build machine. `renders/video/ordgarius.mp4` and `.gif` were produced by `render.py --video magnificent-spider` (git-ignored).
@@ -328,7 +328,7 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 - Golden: temporary spiral kept at alpha 0.32 in `#b89a55`. Barrier: 52–66 points in a 170×820×220 px box between the right frame and the right branch, obliquely projected (x += 0.32z, y += 0.12z); a nearest-edge spanning tree (so she always walks on silk) plus 2–3 nearest partners per point, and three long stays to frame anchors; alpha 0.35–0.6 from depth. Golden radii 38–46 and capture 7.4→6.3 px (within ±30%) keep records under 19,000 within the bead budget.
 - Specimen `bounds` cover every non-INVISIBLE record, ENV included, plus the rest-glyph extent: the viewer clips its per-instance buffers to them.
 - Scaffold branches have a separate deterministic random stream from frame, radii and spiral construction, so editing bark and leaf geometry cannot silently change the orb topology. Spiral first visits use their actual initial radii rather than consuming a spacing step; the capture shimmer is perpendicular to the upper-left light.
-- Frame corners come from the scaffold (`frame_polygon(branches)`): a corner within 12 px of a branch sits on the bark; otherwise a short, nearly straight tapering side twig (≤ 90 px, one gentle bend, some forked) carries it. Side twigs are never S-shaped connectors, which read as wires. Each species has its own set piece (golden: leaning sapling + crown bough + ground limb; argiope: one arching stem + a cross stem; hortophora: a three-stemmed shrub; phonognatha: a forked sapling under a crossing twig; austracantha: a U-fork flanked by two bushes; arachnura: two stems meeting in a V under a level twig).
+- Frame corners come from the scaffold (`frame_polygon(branches)`): a corner within 12 px of a branch sits on the bark; otherwise a short, nearly straight tapering side twig (≤ 105 px, one gentle bend, some forked) carries it. Side twigs are never S-shaped connectors, which read as wires. Each species has its own set piece (golden: leaning sapling + crown bough + ground limb; argiope: one arching stem + a cross stem; hortophora: a three-stemmed shrub; phonognatha: a forked sapling under a crossing twig; austracantha: a U-fork flanked by two bushes; arachnura: two stems meeting in a V under a level twig).
 - A spiral junction reached by a jump counts as that spoke's first visit (otherwise a later row could re-lay the identical chord backwards).
 - Rule 6's radial-gap CV skips the gaps bordering an open sector (Arachnura's V is signature, not jitter); the same filter is used for reported metrics.
 - Colony: each later orb lists `shared` frame corners; they are attached to an earlier orb's live frame thread (pre-split in the plan graph) before she starts. Orb RNG seeds come from `christmas-jewel-spider`, `-2`, `-3`. Tufts are half-ellipse loops from one frame knot out and back to a second knot 2–3 px along, 6–10 segments fitted to 6–12 px, every 20 mm/0.35 = 57 px (×U[0.75, 1.25]); after relaxation their interior follows the mean shift of the two knots.

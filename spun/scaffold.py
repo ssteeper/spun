@@ -14,8 +14,8 @@ def _rgb(hexcode):
 
 # A frame corner closer than this to the bark is tied straight onto it.
 BARK_SNAP = 12.0
-# Longest side twig carrying a frame anchor.
-TWIG_MAX = 90.0
+# Longest side twig carrying a frame anchor (Arachnura's upper V corners need 101 px).
+TWIG_MAX = 105.0
 
 
 @dataclass(frozen=True)
