@@ -211,10 +211,7 @@ The birth index is `gl_InstanceID`.
 
 Three renderers draw the same frozen records with the same visibility rules:
 
-- Records $i < \lfloor c
-floor$ are complete; record $\lfloor c
-floor$ is drawn to fraction $c-\lfloor c
-floor$.
+- Records $i < \lfloor c\rfloor$ are complete; record $\lfloor c\rfloor$ is drawn to fraction $c-\lfloor c\rfloor$.
 - Once $c \ge$ death, alpha fades over `min(fadeRecords, N − death)` records.
 - `INVISIBLE` records and records with lod < minLod are skipped.
 - Hairline rule: $w_{px}=\max(w\,s,0.55)\cdot dpr$, drawn with radius $\max(0.5w_{px},0.5)$ and alpha $\times\min(w_{px},1)$.
@@ -265,10 +262,33 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
   - golden sits exactly at the 32,000-bead cap after deterministic thinning.
 - **Plates:** `tools/render.py` wrote dusk and dawn plates for all nine species plus both catalogue plates in `renders/`. Each plate was opened and critiqued; see Plate notes.
 - **Video:** ffmpeg is present on the build machine. `renders/video/ordgarius.mp4` and `.gif` were produced by `render.py --video magnificent-spider` (git-ignored).
+- **Browser checks** (`tools/verify_web.py`, report in [web/verification/README.md](web/verification/README.md)): all 17 PASS.
+  - **Environment:** headless Chromium 153.0.8010.12 via Playwright, with flags `--enable-gpu --ignore-gpu-blocklist --use-angle=d3d11`. Renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)", a hardware GPU with WebGL2.
+  - **Cold load:** 0 console errors and 0 failed requests. Only the shell, `index.json` (110,343 B) and `argiope.silk` (237,872 B) were fetched (budget 409,600 B).
+  - **All nine species** plant and complete in both 2D and GL; decoded segment and bead counts equal `index.json`.
+  - **Parity** (stroke-pixel MAD, 2D vs GL, 1280×800, DPR 1; glow off/on, limits 12/14): default (argiope) 4.221/3.196 at 40% and 3.1/2.757 at the end; golden 5.039/3.886 at 40% and 3.023/3.619 at the end; net-casting 2.347/2.704 at 40% and 5.29/6.04 at the end.
+  - **Zero uploads:** `glBufferUploadsLastFrame` stayed 0 across 120 frames of growth.
+  - **Settle-and-stop:** in both backends `rafActive` is false and `framesRendered` stays constant from 1 s to 1.5 s after completion.
+  - **Eating:** argiope's probed temporary record is visible mid-capture (pixel delta 89 in 2D, 87 in GL) and gone at the end (0). Golden's temporary silk is still present at the end (delta 99 / 97).
+  - **Dew and glue:** golden in Dawn shows 0 dew while growing and all 32,000 beads once complete. Glue is visible in Dusk on redback and magnificent, in both backends.
+  - **Cap and fit:** planting 13 webs leaves 12. Webs planted at the four corners sit exactly at the 4 px inset.
+  - **Reduced motion:** a new web is complete on the next frame (cursor 7,196 = N) in both backends.
+  - **Fallback:** `?nogl=1` runs on 2D with no errors, and the backend choice persists across reload.
+  - **Context loss:** the screenshot after restore matches the one before (max pixel difference 0).
+  - **Offline:** the service worker activates with 18 precached entries. After one online visit, an offline reload plants argiope and golden.
+  - **Mobile:** at 390×844 the document is 390 px wide and the chip strip scrolls (0 → 367 px).
+  - **Keyboard:** Tab reaches the chips, arrows switch species, Enter plants on the stage, and Esc clears.
+  - **Accessibility:** 24 text elements, minimum contrast 6.7:1. Three radiogroups use roving tabindex with Home/End. Focus rings are visible, the live region is polite, and the canvas has `tabindex=0` and a label.
+  - **Performance:** with 12 growing webs (default and golden), 2D and GL both measured a 16.67 ms mean frame time (p95 ≤ 16.8 ms) on the RTX 5070 Ti. That is the 60 Hz vsync cap; headroom above 60 fps was not measured.
 
 ### Not verified
 
-- Browser checks (§11.3) are reported by `tools/verify_web.py` in [web/verification/README.md](web/verification/README.md). Their outcomes are recorded here only after that run is committed.
+- Safari and Firefox: only Chromium ran.
+- Real mobile devices and touch hardware: 390×844 was emulated.
+- A real offline or sleep–wake cycle: offline was emulated with Playwright's `context.set_offline`, and context loss was forced through `WEBGL_lose_context`.
+- Frame-time headroom above the 60 Hz vsync.
+- Screen-reader output: only ARIA structure and roles were checked.
+- Headed (non-headless) browser runs and high-DPR hardware displays other than the emulated ones.
 
 ## Documented versus stylized traits
 
@@ -301,14 +321,14 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 - Header version, sizes, scales, reserved bytes and file length are checked when decoding. The validator maps malformed files to Rule 1 and reports Rules 1–9 by number. Rule 10's byte-identical consecutive-build check belongs with the build tool.
 - Validator metadata holds specimen kind, one hub/frame polygon and radial endpoints per orb builder, open-sector angular intervals, the golden flag, 512 timeline cursors, stage boundaries, per-builder spinneret rest positions, and catalogue/index/default asset byte totals. Geometry and rest positions are checked against decoded, quantized records rather than trusting claims of validity in metadata.
 - Geometric limits use inclusive CV bounds. The validator reconstructs each possibly kinked radial spoke from decoded radius records; capture endpoints must match actual radial nodes exactly, and spoke drift is bounded by the relaxation displacement allowance plus half a native pixel. Budget KB/MB are interpreted as KiB/MiB.
-- The 512-sample pacing module moved forward to Phase 2 so the actual reference itinerary can pass Rule 8. If relaxation violates the displacement, radial-order, crossing or quantized-length conditions, the deterministic fallback is the unchanged planned coordinates.
+- Every specimen is paced into its 512-sample timeline during its own build, so the validator checks Rule 8 on the real itinerary. If relaxation violates the displacement, radial-order, crossing or quantized-length conditions, the deterministic fallback is the unchanged planned coordinates.
 - Spiral jump targets are only spokes from which a chord can actually leave (so an isolated frontier cannot induce an endless walk). Remaining temporary silk is removed before the final walk. Future open sectors are removed from the angular gaps before proposing new radii.
 - Row-laying "no room" also covers level: an inward row refuses an already-visited neighbour whose candidate junction lies deeper than her own junction by more than `max(s, 0.5·d·Δθ)` (the chord would run nearly radial). She turns back, so spokes with more remaining room gain extra rows until the rows are level again. This is what makes golden's lower-half turnbacks, and the concentric rows round every hub, emerge instead of fans of near-radial chords.
 - A new spiral junction closer than 1 px to an existing node on the same spoke reuses that node: sub-pixel radial stubs quantize into false crossings (golden retains its temporary spiral, so capture and temporary junctions meet on the same spokes).
-- Golden: temporary spiral kept at alpha 0.32 in `#b89a55`. Barrier: 52–66 points in a 170×820×220 px box between the right frame and the right branch, obliquely projected (x += 0.32z, y += 0.12z); a nearest-edge spanning tree (so she always walks on silk) plus 2–3 nearest partners per point, and three long stays to frame anchors; alpha 0.35–0.6 from depth. Golden radii 38–46 and capture 7.4→6.3 px (within ±30%) keep records under 19,000 for the Phase 5 bead budget.
-- Specimen `bounds` (Phase 5) will cover every non-INVISIBLE record, ENV included, plus the rest-glyph extent: the viewer clips its per-instance buffers to them.
+- Golden: temporary spiral kept at alpha 0.32 in `#b89a55`. Barrier: 52–66 points in a 170×820×220 px box between the right frame and the right branch, obliquely projected (x += 0.32z, y += 0.12z); a nearest-edge spanning tree (so she always walks on silk) plus 2–3 nearest partners per point, and three long stays to frame anchors; alpha 0.35–0.6 from depth. Golden radii 38–46 and capture 7.4→6.3 px (within ±30%) keep records under 19,000 within the bead budget.
+- Specimen `bounds` cover every non-INVISIBLE record, ENV included, plus the rest-glyph extent: the viewer clips its per-instance buffers to them.
 - Scaffold branches have a separate deterministic random stream from frame, radii and spiral construction, so editing bark and leaf geometry cannot silently change the orb topology. Spiral first visits use their actual initial radii rather than consuming a spacing step; the capture shimmer is perpendicular to the upper-left light.
-- Frame corners come from the scaffold (`frame_polygon(branches)`): a corner within 12 px of a branch sits on the bark; otherwise a short, nearly straight tapering side twig (≤ 90 px, one gentle bend, some forked) carries it. The earlier S-shaped connector twigs read as wires and are gone. Each species has its own set piece (golden: leaning sapling + crown bough + ground limb; argiope: one arching stem + a cross stem; hortophora: a three-stemmed shrub; phonognatha: a forked sapling under a crossing twig; austracantha: a U-fork flanked by two bushes; arachnura: two stems meeting in a V under a level twig).
+- Frame corners come from the scaffold (`frame_polygon(branches)`): a corner within 12 px of a branch sits on the bark; otherwise a short, nearly straight tapering side twig (≤ 90 px, one gentle bend, some forked) carries it. Side twigs are never S-shaped connectors, which read as wires. Each species has its own set piece (golden: leaning sapling + crown bough + ground limb; argiope: one arching stem + a cross stem; hortophora: a three-stemmed shrub; phonognatha: a forked sapling under a crossing twig; austracantha: a U-fork flanked by two bushes; arachnura: two stems meeting in a V under a level twig).
 - A spiral junction reached by a jump counts as that spoke's first visit (otherwise a later row could re-lay the identical chord backwards).
 - Rule 6's radial-gap CV skips the gaps bordering an open sector (Arachnura's V is signature, not jitter); the same filter is used for reported metrics.
 - Colony: each later orb lists `shared` frame corners; they are attached to an earlier orb's live frame thread (pre-split in the plan graph) before she starts. Orb RNG seeds come from `christmas-jewel-spider`, `-2`, `-3`. Tufts are half-ellipse loops from one frame knot out and back to a second knot 2–3 px along, 6–10 segments fitted to 6–12 px, every 20 mm/0.35 = 57 px (×U[0.75, 1.25]); after relaxation their interior follows the mean shift of the two knots.
@@ -371,7 +391,7 @@ Kept out on purpose by the non-goals, and possible later:
 - Audio.
 - WebXR, 3-D or mesh export, WebGPU.
 - More species (e.g. *Cyrtophora* tent webs, *Poltys*).
-- Safari and hardware-GPU verification.
+- Safari and Firefox verification, real-device mobile testing, screen-reader testing.
 
 ## Usage
 
