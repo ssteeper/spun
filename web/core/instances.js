@@ -1,5 +1,6 @@
 import { parseSilk } from "../silk.js";
 import { QUALITY } from "../gl/sunlit.js";
+import { View } from "./view.js";
 
 const INSTANCE_LIMIT = 12;
 const INSET = 4;
@@ -45,11 +46,14 @@ function builderRange(data) {
 }
 
 export class InstanceManager {
-  constructor({ stage, renderers, backend = "2d", overlay, settings = null, onStatus = () => {}, onReady = () => {}, onBackend = () => {} }) {
+  constructor({ stage, renderers, backend = "2d", overlay, settings = null, onStatus = () => {}, onReady = () => {}, onBackend = () => {}, onFrame = () => {} }) {
     this.stage = stage;
     this.settings = settings;
     this.sceneTime = 0;
     this.autoQuality = null;
+    this.frameTimes = [];
+    this.view = new View();
+    this.view.resize(stage.width, stage.height);
     this.renderers = renderers;
     this.onBackend = onBackend;
     this.backend = renderers[backend] ? backend : "2d";
@@ -57,6 +61,7 @@ export class InstanceManager {
     this.overlay = overlay;
     this.onStatus = onStatus;
     this.onReady = onReady;
+    this.onFrame = onFrame;
     this.manifest = null;
     this.assets = new Map();
     this.instances = [];
@@ -231,6 +236,19 @@ export class InstanceManager {
     return !this.frozen && this.effectiveLook() === "sunlit" && this.motion() > 0;
   }
 
+  // Automatic quality steps down a level when Sunlit frames stay slow (over ~24 ms) for two seconds.
+  adaptQuality(delta) {
+    if (this.settings?.values.quality !== "auto" || this.effectiveLook() !== "sunlit" || !this.autoQuality) return;
+    this.frameTimes.push(delta);
+    if (this.frameTimes.length < 120) return;
+    const sorted = [...this.frameTimes].sort((a, b) => a - b);
+    this.frameTimes.length = 0;
+    const median = sorted[sorted.length >> 1];
+    const order = ["low", "medium", "high"];
+    const index = order.indexOf(this.autoQuality);
+    if (median > 0.024 && index > 0) this.autoQuality = order[index - 1];
+  }
+
   quality() {
     let name = this.settings?.values.quality ?? "auto";
     if (name === "auto") {
@@ -247,13 +265,20 @@ export class InstanceManager {
   prepareFrame() {
     const look = this.effectiveLook();
     const gl = this.renderers.gl;
+    // Zoom is a Sunlit feature; the Classic renderers always show the whole stage.
+    if (look !== "sunlit" && !this.view.identity) {
+      this.view.animation = null;
+      this.view.zoom = 1;
+      this.view.clamp();
+    }
     if (gl) {
       gl.look = look;
       gl.frameState = look === "sunlit"
-        ? { settings: this.settings, mode: this.mode, stage: this.stage, time: this.sceneTime, motion: this.motion(), quality: this.quality() }
+        ? { settings: this.settings, mode: this.mode, stage: this.stage, time: this.sceneTime, motion: this.motion(), quality: this.quality(), view: this.view }
         : null;
     }
     this.overlay.enabled = !(look === "sunlit" && this.settings?.values.spiders.model === "3d");
+    this.overlay.view = look === "sunlit" ? this.view : null;
   }
 
   // Re-evaluates each web's dew clock after a mode or Dew-setting change.
@@ -287,6 +312,7 @@ export class InstanceManager {
   }
 
   resize() {
+    this.view.resize(this.stage.width, this.stage.height);
     for (const instance of this.instances) this.place(instance);
     this.requestFrame();
   }
@@ -302,19 +328,22 @@ export class InstanceManager {
     if (this.lastTimestamp == null) this.lastTimestamp = timestamp;
     const delta = this.frozen ? 0 : Math.max(0, (timestamp - this.lastTimestamp) / 1000);
     this.lastTimestamp = timestamp;
+    if (delta > 0) this.adaptQuality(delta);
     if (delta > 0) {
       for (const instance of this.instances) {
         instance.elapsed = Math.min(this.endTime(instance), instance.elapsed + delta);
       }
       if (this.ambientActive()) this.sceneTime += Math.min(delta, 0.1);
     }
+    const zooming = this.view.step(timestamp);
     this.advance();
     this.prepareFrame();
     this.renderer.render(this.instances);
     this.overlay.draw(this.instances);
     this.framesRendered++;
     this.updateStatus(timestamp);
-    if (!this.frozen && (this.ambientActive() || this.instances.some(instance => instance.elapsed < this.endTime(instance)))) {
+    this.onFrame(this);
+    if (zooming || (!this.frozen && (this.ambientActive() || this.instances.some(instance => instance.elapsed < this.endTime(instance))))) {
       this.rafId = requestAnimationFrame(next => this.frame(next));
       return;
     }
@@ -404,6 +433,7 @@ export class InstanceManager {
       quality: this.effectiveLook() === "sunlit" ? this.quality().name : null,
       sceneTime: this.sceneTime,
       ambient: this.ambientActive(),
+      zoom: this.view.zoom,
       spidersDrawnLastFrame: sunlit && this.effectiveLook() === "sunlit" ? sunlit.stats.spidersDrawn : 0,
       canopyInstances: sunlit?.stats.canopyInstances ?? 0,
       instances: this.instances.length,

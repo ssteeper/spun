@@ -1,5 +1,4 @@
-const REST_SECONDS = 0.5;
-const FADE_IN_SECONDS = 0.3;
+import { activeSpiders } from "./spiderPose.js";
 
 function hexColor(value) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : "#dbe5f1";
@@ -10,75 +9,24 @@ export class SpiderOverlay {
     this.stage = stage;
     this.ctx = stage.overlayCtx;
     this.enabled = true; // false while the Sunlit renderer draws the 3-D spiders itself
+    this.view = null;    // the Sunlit zoom, when the illustrated spiders are drawn over it
   }
 
   draw(instances) {
     const { ctx, stage } = this;
     ctx.clearRect(0, 0, stage.width, stage.height);
     if (!this.enabled) return;
-    for (const instance of instances) {
-      const data = instance.data;
-      const spiders = data.specimen.spiders || [];
-      for (const spider of spiders) {
-        const builder = spider.builder;
-        const first = instance.builderFirst[builder];
-        const last = instance.builderLast[builder];
-        if (first == null || instance.cursor <= first) continue;
-        const fade = instance.reducedMotion ? 1 : Math.max(0, Math.min(1, (instance.elapsed - instance.builderStartSeconds[builder]) / FADE_IN_SECONDS));
-        if (fade <= 0) continue;
-        const completed = instance.cursor >= last + 1;
-        const settling = completed ? Math.max(0, Math.min(1, (instance.elapsed - instance.builderFinishSeconds[builder]) / REST_SECONDS)) : 0;
-        const pose = this.spiderPose(instance, spider, builder, completed, settling);
-        if (!pose) continue;
-        ctx.save();
-        ctx.globalAlpha = fade;
-        ctx.translate(pose.x, pose.y);
-        ctx.rotate(pose.angle);
-        this.drawGlyph(spider.glyph, pose, settling);
-        ctx.restore();
-      }
+    const view = this.view && !this.view.identity ? this.view : null;
+    if (view) ctx.setTransform(stage.dpr * view.zoom, 0, 0, stage.dpr * view.zoom, stage.dpr * view.tx, stage.dpr * view.ty);
+    for (const { spider, fade, settling, pose } of activeSpiders(instances)) {
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(pose.x, pose.y);
+      ctx.rotate(pose.angle);
+      this.drawGlyph(spider.glyph, pose, settling);
+      ctx.restore();
     }
-  }
-
-  spiderPose(instance, spider, builder, completed, settling) {
-    const data = instance.data;
-    const specimen = data.specimen;
-    const first = instance.builderFirst[builder];
-    const last = instance.builderLast[builder];
-    if (first == null || last == null) return null;
-    let record = Math.min(data.count - 1, Math.max(first, Math.floor(instance.cursor)));
-    while (record > first && ((data.styles[record * 8 + 6] >> 4) & 3) !== builder) record--;
-    const local = completed ? 1 : Math.max(0, Math.min(1, instance.cursor - record));
-    const p = record * 4;
-    const x = data.coords[p] + (data.coords[p + 2] - data.coords[p]) * local;
-    const y = data.coords[p + 1] + (data.coords[p + 3] - data.coords[p + 1]) * local;
-    const angle = Math.atan2(data.coords[p + 3] - data.coords[p + 1], data.coords[p + 2] - data.coords[p]);
-    const placement = instance.placement;
-    const { originX, originY } = placement;
-    const distanceEnd = data.cumulativeLength[record];
-    const distance = completed ? data.builderLengths[builder] : distanceEnd - data.lengths[record] + data.lengths[record] * local;
-    const glyph = spider.glyph;
-    const mmPerUnit = specimen.mmPerUnit || 1;
-    const phase = ((distance * mmPerUnit / Math.max(1e-6, glyph.strideMm || 1)) % 1 + 1) % 1 * 8;
-    const frame = Math.floor(phase) % 8;
-    const fraction = phase - Math.floor(phase);
-    const gait = glyph.gait || [];
-    const gaitLegs = gait.length === 8 ? gait[frame].map((leg, legIndex) => leg.map((joint, jointIndex) => [
-      joint[0] + (gait[(frame + 1) % 8][legIndex][jointIndex][0] - joint[0]) * fraction,
-      joint[1] + (gait[(frame + 1) % 8][legIndex][jointIndex][1] - joint[1]) * fraction,
-    ])) : glyph.rest;
-    const restAngle = spider.rest?.angle ?? angle;
-    const angleDelta = Math.atan2(Math.sin(restAngle - angle), Math.cos(restAngle - angle));
-    return {
-      x: originX + x * placement.scale,
-      y: originY + y * placement.scale,
-      angle: angle + angleDelta * settling,
-      gaitLegs,
-      restLegs: glyph.rest,
-      scale: placement.scale * (glyph.scale || 1) / mmPerUnit,
-      isRest: completed,
-      restVisible: glyph.restVisible || { body: true, eyes: true, legFromJoint: 0 },
-    };
+    if (view) ctx.setTransform(stage.dpr, 0, 0, stage.dpr, 0, 0);
   }
 
   drawGlyph(glyph, pose, settling) {

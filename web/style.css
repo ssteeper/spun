@@ -73,6 +73,17 @@ kbd { margin-left: 5px; border: 1px solid rgba(255,255,255,.2); border-radius: 4
 #web-canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .stage-hint { position: absolute; z-index: 3; left: 50%; bottom: 24px; transform: translateX(-50%); margin: 0; padding: 8px 13px; border: 1px solid rgba(255,255,255,.11); border-radius: 999px; background: rgba(10,14,26,.72); color: var(--text-2); font-size: 11px; white-space: nowrap; pointer-events: none; transition: opacity .25s ease; }
 .stage-hint.hidden { opacity: 0; }
+.zoom-hud { position: absolute; z-index: 3; right: 16px; bottom: 18px; display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(8,11,21,.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.zoom-hud[hidden] { display: none; }
+.zoom-button, .zoom-fit { display: grid; place-items: center; min-width: 30px; height: 30px; border: 0; border-radius: 999px; background: none; color: var(--text); cursor: pointer; }
+.zoom-button svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.zoom-fit { padding: 0 10px; font-size: 11px; }
+.zoom-button:hover, .zoom-fit:hover { background: rgba(159,196,255,.14); }
+.zoom-button:disabled, .zoom-fit:disabled { color: var(--muted); cursor: default; background: none; }
+.zoom-level { min-width: 40px; color: var(--text-2); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+body.panel-open .zoom-hud { right: calc(min(356px, 100vw) + 16px); }
+#web-canvas.can-pan { cursor: grab; }
+#web-canvas.panning { cursor: grabbing; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
@@ -107,6 +118,8 @@ kbd { margin-left: 5px; border: 1px solid rgba(255,255,255,.2); border-radius: 4
   .segment { min-width: 37px; min-height: 28px; padding: 4px 7px; font-size: 10px; }
   .clear-button { position: absolute; right: 20px; top: auto; bottom: 14px; z-index: 4; }
   .stage-hint { bottom: max(15px, env(safe-area-inset-bottom)); max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+  .zoom-hud { right: 10px; bottom: max(56px, calc(env(safe-area-inset-bottom) + 50px)); }
+  body.panel-open .zoom-hud { display: none; }
 }
 /* Scene panel ---------------------------------------------------------------- */
 .scene-panel {

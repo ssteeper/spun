@@ -115,12 +115,15 @@ export class SunlitPipeline {
     this.targets = null;
   }
 
-  ensureTargets(width, height, aspect, quality) {
-    const key = `${width}x${height}|${aspect.toFixed(4)}|${quality.name}`;
+  // Soft passes (canopy, light, backdrop) are sized from CSS pixels: they are blurry by nature and
+  // gain nothing from a high device-pixel ratio. The scene and bloom follow the canvas.
+  ensureTargets(width, height, aspect, quality, dpr) {
+    const key = `${width}x${height}|${aspect.toFixed(4)}|${quality.name}|${dpr}`;
     if (this.targets?.key === key) return this.targets;
     this.releaseTargets();
-    const canopyH = height * quality.canopy * (1 + 2 * CANOPY_MARGIN);
-    const canopyW = height * quality.canopy * (aspect + 2 * CANOPY_MARGIN);
+    const soft = 1 / Math.max(1, dpr);
+    const canopyH = height * soft * quality.canopy * (1 + 2 * CANOPY_MARGIN);
+    const canopyW = height * soft * quality.canopy * (aspect + 2 * CANOPY_MARGIN);
     const bloom = [];
     let bw = width / 2;
     let bh = height / 2;
@@ -134,14 +137,14 @@ export class SunlitPipeline {
     this.targets = {
       key,
       canopy: this.target(canopyW, canopyH, { mipmap: true }),
-      backdrop: this.target(width * quality.backdrop, height * quality.backdrop, { mipmap: true }),
-      light: this.target(width * quality.rays, height * quality.rays, { float: false }),
-      lightTmp: this.target(width * quality.rays, height * quality.rays, { float: false }),
+      backdrop: this.target(width * soft * quality.backdrop, height * soft * quality.backdrop, { mipmap: true }),
+      light: this.target(width * soft * quality.rays, height * soft * quality.rays, { float: false }),
+      lightTmp: this.target(width * soft * quality.rays, height * soft * quality.rays, { float: false }),
       scene: this.target(width, height),
       foreground: this.target(quarterW, quarterH),
       bloom,
       star: { sum: this.target(quarterW, quarterH), a: this.target(quarterW, quarterH), b: this.target(quarterW, quarterH), bright: this.target(quarterW, quarterH) },
-      canopyTexelH: 1 / (height * quality.canopy),
+      canopyTexelH: 1 / (height * soft * quality.canopy),
     };
     return this.targets;
   }
@@ -200,7 +203,7 @@ export class SunlitPipeline {
     if (mesh) return mesh;
     const gl = this.gl;
     const built = buildLeafMesh(data);
-    mesh = { count: built.count, leaves: built.leaves, vao: null };
+    mesh = { count: built.count, shapes: built.shapes, vao: null };
     if (built.count) {
       mesh.vao = gl.createVertexArray();
       const vbo = gl.createBuffer();
@@ -213,6 +216,8 @@ export class SunlitPipeline {
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0);
       gl.enableVertexAttribArray(1);
       gl.vertexAttribPointer(1, 4, gl.FLOAT, false, stride, 8);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 24);
       gl.bindVertexArray(null);
     }
     this.leafMeshes.set(data, mesh);
@@ -328,7 +333,7 @@ export class SunlitPipeline {
     const height = gl.canvas.height;
     const dpr = stage.dpr;
     const env = this.environment(frame);
-    const targets = this.ensureTargets(width, height, env.aspect, quality);
+    const targets = this.ensureTargets(width, height, env.aspect, quality, dpr);
     const content = this.ensureContent(settings);
     const motion = frame.motion;
     const stageSize = [stage.width, stage.height];
@@ -403,9 +408,10 @@ export class SunlitPipeline {
     this.blend("none");
     this.fullscreen(this.p.copy, { u_tex: targets.backdrop });
     this.blend("over");
+    const view = frame.view;
     const shading = {
       u_light: targets.light, u_sunDir: env.sunDir, u_sunRadiance: env.sunRadiance, u_ambient: env.ambient,
-      u_eye: env.eye, u_viewport: [width, height], u_dpr: dpr,
+      u_eye: env.eye, u_viewport: [width, height], u_dpr: dpr, u_view: [view.zoom, view.tx, view.ty],
     };
     const leafTint = linear(s.foliage.leafColor);
     this.stats.dewDrawn = 0;
@@ -466,7 +472,7 @@ export class SunlitPipeline {
       ...space, u_scene: targets.scene, u_bloomTex: targets.bloom[0], u_starTex: targets.star.sum,
       u_light: targets.light, u_foreground: targets.foreground, u_canopy: targets.canopy, u_sunH: env.sunH,
       u_sunRadiance: env.sunRadiance, u_hazeColor: env.hazeColor, u_sunDir: env.sunDir, u_haze: env.haze, u_rays: env.rays,
-      u_backlight: env.backlight, u_bloom: cam.bloom, u_star: starOn ? 0.9 * s.dew.glint : 0, u_exposure: cam.exposure,
+      u_backlight: env.backlight, u_bloom: cam.bloom, u_star: starOn ? 0.55 * s.dew.glint : 0, u_exposure: cam.exposure,
       u_contrast: cam.contrast, u_saturation: cam.saturation, u_whiteBalance: whiteBalance(cam.warmth), u_vignette: cam.vignette,
       u_grain: cam.grain, u_aberration: cam.aberration, u_flare: cam.flare, u_time: motion > 0 ? time : 0,
       u_foregroundOn: foreground ? 1 : 0, u_eyeZ: EYE_Z, u_debug: this.debugView || 0,
@@ -493,7 +499,7 @@ export class SunlitPipeline {
       const dir = [Math.cos(angle) * texel[0], Math.sin(angle) * texel[1]];
       this.blend("none");
       this.bind(a);
-      this.fullscreen(this.p.streak, { u_tex: source, u_dir: dir, u_pass: 0, u_threshold: 3.0 });
+      this.fullscreen(this.p.streak, { u_tex: source, u_dir: dir, u_pass: 0, u_threshold: 7.0 });
       this.bind(b);
       this.fullscreen(this.p.streak, { u_tex: a, u_dir: dir, u_pass: 1, u_threshold: 0 });
       this.bind(a);
@@ -512,8 +518,10 @@ export class SunlitPipeline {
     const s = frame.settings.values;
     const dpr = frame.stage.dpr;
     const resources = this.owner.specimenResources(data);
-    const xform = [placement.originX * dpr, placement.originY * dpr, placement.scale * dpr];
-    const threshold = minLod(placement.detail);
+    const { zoom, tx, ty } = frame.view;
+    const scale = placement.scale * zoom;
+    const xform = [(placement.originX * zoom + tx) * dpr, (placement.originY * zoom + ty) * dpr, scale * dpr];
+    const threshold = minLod(Math.min(1, placement.detail * zoom));
     const fadeRecords = instance.specimen.fadeRecords || 6;
     const drawn = Math.min(data.count, Math.ceil(cursor));
     const mesh = this.leafMesh(data);
@@ -524,8 +532,9 @@ export class SunlitPipeline {
     }
     if (drawn > 0) {
       this.use(this.p.silk, {
-        ...shading, u_xform: xform, u_scale: placement.scale, u_minLod: threshold, u_minWidthPx: 0.55,
+        ...shading, u_xform: xform, u_scale: scale, u_minLod: threshold, u_minWidthPx: 0.55,
         u_coordScale: data.coordScale, u_widthScale: data.widthScale, u_thickness: s.silk.thickness, u_cursor: cursor,
+        u_silkZoom: Math.pow(zoom, -0.7),
         u_N: data.count, u_fadeRecords: fadeRecords, u_brightness: s.silk.brightness, u_iridescence: s.silk.iridescence,
         u_sheen: s.silk.sheen, u_sparkle: s.silk.sparkle, u_leafTint: leafTint,
       });
@@ -535,7 +544,7 @@ export class SunlitPipeline {
     const beads = resources.beadVao ? this.owner.beadsBefore(data, cursor) : 0;
     if (beads > 0) {
       this.use(this.p.dew, {
-        ...shading, u_xform: xform, u_minLod: threshold, u_dewAge: placement.detail < 0.35 ? -1 : instance.dewAge,
+        ...shading, u_xform: xform, u_minLod: threshold, u_dewAge: placement.detail * zoom < 0.35 ? -1 : instance.dewAge,
         u_cursor: cursor, u_N: data.count, u_fadeRecords: fadeRecords, u_amount: s.dew.amount, u_size: s.dew.size,
         u_backdrop: this.targets.backdrop, u_refraction: s.dew.refraction, u_glint: s.dew.glint,
         u_lensDist: 0.3 * gl.canvas.height, u_skyTop: env.skyTop, u_skyHorizon: env.skyHorizon,

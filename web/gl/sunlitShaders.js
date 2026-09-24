@@ -428,6 +428,7 @@ uniform float u_minWidthPx;
 uniform float u_coordScale;
 uniform float u_widthScale;
 uniform float u_thickness;
+uniform float u_silkZoom;   // silk stays hair-fine under magnification: zoom^0.3 / zoom
 uniform vec2 u_viewport;
 uniform float u_cursor;
 uniform float u_N;
@@ -464,7 +465,7 @@ void main() {
   vec2 a = u_xform.xy + p0 * u_xform.z;
   vec2 b = u_xform.xy + p1 * u_xform.z;
   bool env = (flags & 2) != 0;
-  float wPx = max(a_style.y / u_widthScale * u_scale * (env ? (a_style2.w > 254.0 ? 1.7 : 1.0) : u_thickness), u_minWidthPx) * u_dpr;
+  float wPx = max(a_style.y / u_widthScale * u_scale * (env ? (a_style2.w > 254.0 ? 1.7 : 1.0) : u_thickness * u_silkZoom), u_minWidthPx) * u_dpr;
   float radius = max(0.5 * wPx, 0.5);
   vec2 d = b - a;
   float len = length(d);
@@ -491,11 +492,15 @@ uniform vec3 u_ambient;      // linear sky fill
 uniform vec3 u_eye;          // CSS px (stage centre, focal distance)
 uniform vec2 u_viewport;
 uniform float u_dpr;
+uniform vec3 u_view;         // zoom, offset x, offset y (CSS px)
+// Light and view directions belong to the unzoomed web plane, so dapples and highlights stay
+// fixed to the silk while zooming.
+vec2 unzoom(vec2 css) { return (css - u_view.yz) / u_view.x; }
 float sunVisibility(vec2 css) {
-  vec2 suv = css / (u_viewport / u_dpr);
+  vec2 suv = unzoom(css) / (u_viewport / u_dpr);
   return texture(u_light, vec2(suv.x, 1.0 - suv.y)).g;
 }
-vec3 viewDir(vec2 css) { return normalize(vec3(u_eye.xy - css, u_eye.z)); }
+vec3 viewDir(vec2 css) { return normalize(vec3(u_eye.xy - unzoom(css), u_eye.z)); }
 `;
 
 export const SILK_FS = `#version 300 es
@@ -617,10 +622,11 @@ void main() {
 }
 `;
 
-// Filled scaffold leaves rebuilt from their closed margin records.
+// Filled leaves and egg sacs rebuilt from their closed outline records (see leafMesh.js).
 export const LEAFMESH_VS = `#version 300 es
 layout(location = 0) in vec2 a_pos;   // native px
-layout(location = 1) in vec4 a_leaf;  // s (base→tip), t (across, -1..1), birth record, leaf id
+layout(location = 1) in vec4 a_leaf;  // s (base to tip), t (across), birth record, shape id
+layout(location = 2) in vec4 a_extra; // material, r, g, b
 uniform vec3 u_xform;
 uniform vec2 u_viewport;
 uniform float u_cursor;
@@ -628,6 +634,7 @@ out vec2 v_st;
 out vec2 v_p;
 flat out float v_id;
 flat out float v_fade;
+flat out vec4 v_extra;
 void main() {
   float fade = clamp((u_cursor - a_leaf.z) / 24.0, 0.0, 1.0);
   vec2 p = u_xform.xy + a_pos * u_xform.z;
@@ -635,6 +642,7 @@ void main() {
   v_p = p;
   v_id = a_leaf.w;
   v_fade = fade;
+  v_extra = a_extra;
   gl_Position = fade <= 0.0 ? vec4(2.0, 2.0, 2.0, 1.0) : vec4(p.x / u_viewport.x * 2.0 - 1.0, 1.0 - p.y / u_viewport.y * 2.0, 0.0, 1.0);
 }
 `;
@@ -646,28 +654,47 @@ in vec2 v_st;
 in vec2 v_p;
 flat in float v_id;
 flat in float v_fade;
+flat in vec4 v_extra;
 uniform vec3 u_leafTint;
 out vec4 o;
 void main() {
   float s = v_st.x;
   float t = v_st.y;
-  float mid = smoothstep(0.07, 0.0, abs(t));
-  float lat = abs(fract(s * 9.0 - abs(t) * 1.3) - 0.5);
-  float veins = mid * 0.8 + smoothstep(0.05, 0.0, abs(lat - 0.46)) * 0.4 * step(abs(t), 0.85);
-  float h = hash11(v_id * 1.618);
-  vec3 albedo = u_leafTint * (0.8 + 0.4 * h) * vec3(1.0 + 0.2 * (h - 0.5), 1.0, 1.0 - 0.3 * (h - 0.5));
-  albedo *= 0.9 + 0.2 * vnoise(v_p * 0.05 + v_id * 7.0);
+  float h = hash11(v_id * 1.618 + 0.37);
   vec2 css = v_p / u_dpr;
   float vis = sunVisibility(css);
   vec3 S = u_sunDir;
   float back = max(0.0, -S.z);
-  vec3 transmit = albedo * vec3(1.3, 1.5, 0.65) + vec3(0.02, 0.04, 0.0);
-  vec3 radiance = albedo * u_ambient * 0.5;
-  radiance += u_sunRadiance * vis * back * transmit * 0.5 * (1.0 - veins * 0.5);
-  radiance += u_sunRadiance * vis * max(0.0, S.z) * albedo * 0.8 * (1.0 - veins * 0.2);
-  float edge = smoothstep(0.65, 1.0, abs(t));
-  radiance *= 1.0 - 0.25 * edge;
-  float a = 0.96 * v_fade;
+  vec3 radiance;
+  float a;
+  if (v_extra.x > 1.5) {
+    // Egg sac: a ball of woolly silk that glows through when backlit.
+    vec3 base = toLinear(v_extra.yzw);
+    vec2 q = vec2((s - 0.5) * 2.0, t);
+    float r = clamp(length(q), 0.0, 1.0);
+    float nz = sqrt(1.0 - r * r);
+    float wool = fbm(v_st * vec2(9.0, 5.0) + v_id * 3.7);
+    float strands = 0.5 + 0.5 * sin((s * 26.0 + t * 7.0) + wool * 6.0);
+    vec3 silk = base * (0.75 + 0.5 * wool) * (0.85 + 0.25 * strands);
+    radiance = silk * u_ambient * (0.45 + 0.35 * nz);
+    radiance += u_sunRadiance * vis * silk * (0.18 + 0.55 * back * (0.4 + 0.6 * (1.0 - nz)) + 0.5 * max(0.0, S.z) * nz);
+    a = 0.94 * v_fade;
+  } else {
+    float mid = smoothstep(0.07, 0.0, abs(t));
+    float lat = abs(fract(s * 9.0 - abs(t) * 1.3) - 0.5);
+    float veins = mid * 0.8 + smoothstep(0.05, 0.0, abs(lat - 0.46)) * 0.4 * step(abs(t), 0.85);
+    vec3 albedo = u_leafTint * (0.8 + 0.4 * h) * vec3(1.0 + 0.2 * (h - 0.5), 1.0, 1.0 - 0.3 * (h - 0.5));
+    // The hauled leaf is dead and dry.
+    if (v_extra.x > 0.5) albedo = vec3(0.3, 0.19, 0.09) * (0.85 + 0.3 * vnoise(v_st * vec2(14.0, 4.0) + v_id));
+    albedo *= 0.9 + 0.2 * vnoise(v_st * vec2(18.0, 6.0) + v_id * 7.0);
+    vec3 transmit = albedo * vec3(1.3, 1.5, 0.65) + vec3(0.02, 0.04, 0.0);
+    radiance = albedo * u_ambient * 0.5;
+    radiance += u_sunRadiance * vis * back * transmit * 0.5 * (1.0 - veins * 0.5);
+    radiance += u_sunRadiance * vis * max(0.0, S.z) * albedo * 0.8 * (1.0 - veins * 0.2);
+    float edge = smoothstep(0.65, 1.0, abs(t));
+    radiance *= 1.0 - 0.25 * edge;
+    a = 0.96 * v_fade;
+  }
   o = vec4(radiance * a, a);
 }
 `;
@@ -939,12 +966,12 @@ uniform float u_threshold;
 in vec2 v_uv;
 out vec4 o;
 void main() {
-  float stride = pow(4.0, u_pass);
+  float stride = pow(3.0, u_pass);
   vec3 s = vec3(0.0);
   float wsum = 0.0;
   for (int k = -3; k <= 3; k++) {
     float fk = float(k);
-    float w = pow(0.9, abs(fk) * stride);
+    float w = pow(0.86, abs(fk) * stride);
     vec3 c = texture(u_tex, v_uv + u_dir * fk * stride).rgb;
     if (u_pass < 0.5) c = max(c - u_threshold, 0.0);
     s += c * w;

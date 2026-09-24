@@ -1,15 +1,30 @@
-// Scaffold leaves are stored as outline records (spun/scaffold.py: leaf()): a closed margin at
-// alpha 0.9, then an open midrib and paired veins. Rebuilding the closed margins as triangle fans
-// lets the Sunlit look fill them as translucent leaves. Bark is always alpha 1, so it never matches.
+// Closed outlines the Sunlit look fills as solid shapes:
+// - scaffold leaves (spun/scaffold.py: leaf()): a closed SCAFFOLD margin at alpha 0.9, then an open
+//   midrib and veins; bark is always alpha 1, so it never matches;
+// - the leaf-curler's hauled leaf (species/phonognatha.py): a closed LEAF outline at alpha 0.95;
+// - egg sacs (species/arachnura.py ovals, spun/snares.py spindles): closed EGGSAC outlines.
+// Each closed chain of same-coloured, end-to-end records becomes a triangle fan.
 
 const KIND_SCAFFOLD = 0;
+const KIND_LEAF = 1;
+const KIND_EGGSAC = 10;
 const FLAG_ENV = 2;
-const MARGIN_ALPHA = 230;
-export const LEAF_VERTEX_FLOATS = 6; // x, y, s, t, birth record, leaf id
+const FLAG_INVISIBLE = 4;
+export const MATERIAL = Object.freeze({ leaf: 0, dryLeaf: 1, eggSac: 2 });
+// x, y, s (base to tip), t (across, -1..1), birth record, shape id, material, r, g, b (sRGB)
+export const LEAF_VERTEX_FLOATS = 10;
 
-function isMarginCandidate(styles, i) {
+function materialOf(styles, i) {
   const o = i * 8;
-  return styles[o] === KIND_SCAFFOLD && (styles[o + 6] & FLAG_ENV) !== 0 && styles[o + 7] === MARGIN_ALPHA;
+  const kind = styles[o];
+  const flags = styles[o + 6];
+  const alpha = styles[o + 7];
+  if (flags & FLAG_INVISIBLE) return -1;
+  if (kind === KIND_EGGSAC) return MATERIAL.eggSac;
+  if (!(flags & FLAG_ENV)) return -1;
+  if (kind === KIND_SCAFFOLD && alpha === 230) return MATERIAL.leaf;
+  if (kind === KIND_LEAF && alpha === 242) return MATERIAL.dryLeaf;
+  return -1;
 }
 
 function sameColor(styles, i, j) {
@@ -18,31 +33,45 @@ function sameColor(styles, i, j) {
   return styles[a + 2] === styles[b + 2] && styles[a + 3] === styles[b + 3] && styles[a + 4] === styles[b + 4];
 }
 
+function joined(coords, i, j) {
+  return Math.abs(coords[i * 4 + 2] - coords[j * 4]) < 0.01 && Math.abs(coords[i * 4 + 3] - coords[j * 4 + 1]) < 0.01;
+}
+
 export function buildLeafMesh(data) {
   const { coords, styles, count } = data;
   const vertices = [];
-  let leafId = 0;
+  let shapes = 0;
   let i = 0;
   while (i < count) {
-    if (!isMarginCandidate(styles, i)) {
+    const material = materialOf(styles, i);
+    if (material < 0) {
       i++;
       continue;
     }
+    // Follow the chain; it closes as soon as a record ends where the chain began.
     let j = i;
-    while (j + 1 < count && isMarginCandidate(styles, j + 1) && sameColor(styles, i, j + 1) &&
-      Math.abs(coords[j * 4 + 2] - coords[(j + 1) * 4]) < 0.01 && Math.abs(coords[j * 4 + 3] - coords[(j + 1) * 4 + 1]) < 0.01) j++;
-    const closed = Math.hypot(coords[j * 4 + 2] - coords[i * 4], coords[j * 4 + 3] - coords[i * 4 + 1]) < 0.6;
-    if (closed && j - i >= 5) {
+    let closed = false;
+    for (;;) {
+      if (Math.hypot(coords[j * 4 + 2] - coords[i * 4], coords[j * 4 + 3] - coords[i * 4 + 1]) < 0.6 && j - i >= 5) {
+        closed = true;
+        break;
+      }
+      const next = j + 1;
+      if (next >= count || materialOf(styles, next) !== material || !sameColor(styles, i, next) || !joined(coords, j, next)) break;
+      j = next;
+    }
+    if (closed) {
       const points = [];
       for (let k = i; k <= j; k++) points.push([coords[k * 4], coords[k * 4 + 1]]);
-      appendLeaf(vertices, points, j, leafId++);
+      const rgb = [styles[i * 8 + 2] / 255, styles[i * 8 + 3] / 255, styles[i * 8 + 4] / 255];
+      appendShape(vertices, points, j, shapes++, material, rgb);
     }
     i = j + 1;
   }
-  return { data: new Float32Array(vertices), count: vertices.length / LEAF_VERTEX_FLOATS, leaves: leafId };
+  return { data: new Float32Array(vertices), count: vertices.length / LEAF_VERTEX_FLOATS, shapes };
 }
 
-function appendLeaf(out, points, birth, id) {
+function appendShape(out, points, birth, id, material, rgb) {
   const base = points[0];
   let tip = base;
   let far = 0;
@@ -70,13 +99,13 @@ function appendLeaf(out, points, birth, id) {
   }
   cx /= points.length;
   cy /= points.length;
-  const centre = [cx, cy];
-  const [cs] = local(centre);
+  const [cs, ct] = local([cx, cy]);
+  const tail = [birth, id, material, ...rgb];
   for (let k = 0; k < points.length; k++) {
     const a = points[k];
     const b = points[(k + 1) % points.length];
     const [as, at] = local(a);
     const [bs, bt] = local(b);
-    out.push(cx, cy, cs, 0, birth, id, a[0], a[1], as, at, birth, id, b[0], b[1], bs, bt, birth, id);
+    out.push(cx, cy, cs, ct, ...tail, a[0], a[1], as, at, ...tail, b[0], b[1], bs, bt, ...tail);
   }
 }
