@@ -1,4 +1,4 @@
-const VERSION = '0000000000000000';
+const VERSION = 'd5190c3116f3965b';
 const SHELL_CACHE = `spun-shell-${VERSION}`;
 const DATA_CACHE = `spun-data-${VERSION}`;
 const INDEX_URL = "specimens/index.json";

@@ -97,10 +97,12 @@ def generate(records: np.ndarray, species_id: str, r0: float) -> np.ndarray:
         previous_distance = None
         while distance < total:
             host,t = _resolve(chain,lengths,distance)
-            wavelength = spacing(radius,rng) if adhesive else step
+            # Fifteen-percent density controls placement, never the volume
+            # of an individual dry droplet. Its RP wavelength uses 0.8R.
+            wavelength = spacing(radius,rng)
             bead_radius = primary_radius(radius,wavelength)
             group = [(host,t,quantize_radius(min(15.9,bead_radius)),0)]
-            if previous_distance is not None and rng.random() < .7:
+            if adhesive and previous_distance is not None and rng.random() < .7:
                 sat_host,sat_t = _resolve(chain,lengths,(previous_distance+distance)/2)
                 group.append((sat_host,sat_t,quantize_radius(min(15.9,.28*bead_radius)),SATELLITE))
             primaries.append(group)

@@ -46,6 +46,19 @@ def test_satellite_volume_and_sorted_deterministic_output():
                for a,b in zip(first,first[1:]))
 
 
+
+def test_sparse_dry_droplets_are_smaller_than_capture_droplets():
+    sticky=beads.generate(records((0,3000,"CAPTURE",STICKY,NEVER)),
+                          "golden-orb-weaver",1.)
+    dry=beads.generate(records((0,3000,"FRAME",0,NEVER)),
+                       "golden-orb-weaver",1.)
+    sticky_primary=sticky[sticky["flags"]==0]
+    assert 0<len(dry)<.25*len(sticky_primary)
+    assert not np.any(dry["flags"] & SATELLITE)
+    assert np.median(dry["radius"])<np.median(sticky_primary["radius"])
+    assert beads.primary_radius(.8,2*math.pi*math.sqrt(2)*.8) < (
+        beads.primary_radius(1.,2*math.pi*math.sqrt(2)))
+
 def test_no_beads_on_environment_walk_or_dying_hosts():
     rows=records((0,500,"CAPTURE",STICKY,NEVER),
                  (0,500,"CAPTURE",STICKY,4),

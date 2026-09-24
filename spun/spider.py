@@ -11,15 +11,15 @@ from functools import lru_cache
 
 # body length, display scale, pose, carapace, abdomen, legs, bands, leg span
 _ANATOMY = {
-    "golden-orb-weaver": (30, 1.6, "head-down", "#aeb2b5", "#abb5ae", "#302b29", "#e8bd69", 1.30),
-    "st-andrews-cross": (15, 1.8, "hub-x", "#cbd4d9", "#d8cd66", "#292a2e", "#e2d676", 1.40),
-    "garden-orb-weaver": (22, 1.6, "hub-rest", "#9a7654", "#715642", "#5d4939", None, 1.18),
-    "leaf-curling-spider": (12, 1.8, "in-leaf", "#ae8c61", "#9e805c", "#735a3c", None, 1.12),
-    "christmas-jewel-spider": (8, 2.0, "hub-rest", "#17191d", "#1d1e22", "#39383a", "#edcb62", 1.24),
+    "golden-orb-weaver": (30, 1.6, "head-down", "#aeb2b5", "#abb5ae", "#81766c", "#e8bd69", 1.30),
+    "st-andrews-cross": (15, 1.8, "hub-x", "#cbd4d9", "#d8cd66", "#898681", "#e2d676", 1.40),
+    "garden-orb-weaver": (22, 1.6, "hub-rest", "#9a7654", "#715642", "#846e59", None, 1.18),
+    "leaf-curling-spider": (12, 1.8, "in-leaf", "#ae8c61", "#9e805c", "#92754c", None, 1.12),
+    "christmas-jewel-spider": (8, 2.0, "hub-rest", "#17191d", "#1d1e22", "#93918d", "#edcb62", 1.24),
     "scorpion-tailed-spider": (16, 1.6, "hub-tail", "#ae884d", "#c49a5d", "#856235", None, 1.10),
     "net-casting-spider": (25, 1.0, "net", "#80684e", "#624d3b", "#61503e", None, 1.35),
     "magnificent-spider": (14, 1.0, "hanging", "#eee3c4", "#dbc8ae", "#b89985", "#dca0a2", 1.30),
-    "redback-spider": (10, 1.8, "retreat", "#15151b", "#1a1920", "#29252a", None, 1.25),
+    "redback-spider": (10, 1.8, "retreat", "#15151b", "#1a1920", "#776c75", None, 1.25),
 }
 
 
@@ -35,11 +35,15 @@ def _polygon(points, fill, stroke=None, lw=0, alpha=1):
 
 def _body(species_id, length, carapace, abdomen):
     compact = species_id in ("christmas-jewel-spider", "redback-spider")
+    slender = species_id == "net-casting-spider"
     back = .32 * length
+    abdomen_ry = .105 if slender else .25 if compact else .19
+    if species_id == "golden-orb-weaver":
+        abdomen_ry = .14
     body = [
         _ellipse(back, 0, (.31 if compact else .29)*length,
-                 (.25 if compact else .19)*length, abdomen, "#271f20", .04*length),
-        _ellipse(.76*length, 0, .21*length, .14*length, carapace,
+                 abdomen_ry*length, abdomen, "#271f20", .04*length),
+        _ellipse(.76*length, 0, .21*length, (.085 if slender else .14)*length, carapace,
                  "#35292a", .036*length),
         _ellipse(.90*length, -.048*length, .065*length, .065*length,
                  "#e8dfcc" if species_id == "magnificent-spider" else carapace),
