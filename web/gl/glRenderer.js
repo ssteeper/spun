@@ -1,5 +1,6 @@
 import { minLod } from "../silk.js";
 import { RECORD_VS, RECORD_FS, BEAD_VS, BEAD_FS, QUAD_VS, COPY_FS, BLUR_FS, BACKGROUND_FS } from "./shaders.js";
+import { SunlitPipeline } from "./sunlit.js";
 
 const HEADER_BYTES = 32;
 const RECORD_BYTES = 20;
@@ -60,6 +61,8 @@ export class GLRenderer {
     this.onRestored = onRestored;
     this.glowEnabled = true;
     this.mode = "dusk";
+    this.look = "classic";
+    this.frameState = null; // set by the instance manager before each Sunlit frame
     this.lost = false;
     this.recordsDrawnLastFrame = 0;
     this.beadsDrawnLastFrame = 0;
@@ -97,6 +100,24 @@ export class GLRenderer {
     this.resources = new WeakMap();
     this.targets = null;
     this.kernelKey = null;
+    this.sunlit = null;
+    if (SunlitPipeline.supported(gl)) {
+      try {
+        this.sunlit = new SunlitPipeline(this);
+      } catch (error) {
+        if (!gl.isContextLost()) console.warn("Sunlit look unavailable; using Classic.", error);
+        this.sunlit = null;
+      }
+    }
+  }
+
+  get sunlitAvailable() {
+    return Boolean(this.sunlit);
+  }
+
+  // Beads are sorted by host, so the drawable prefix ends at the first bead on an unfinished record.
+  beadsBefore(data, cursor) {
+    return lowerBound(data.beadHosts, Math.floor(cursor), data.beadCount);
   }
 
   program(vsSource, fsSource) {
@@ -264,6 +285,14 @@ export class GLRenderer {
     this.temporaryRecordsDrawnLastFrame = 0;
     const gl = this.gl;
     if (this.lost || gl.isContextLost()) return;
+    if (this.look === "sunlit" && this.sunlit && this.frameState) {
+      for (const instance of instances) {
+        this.recordsDrawnLastFrame += Math.min(instance.data.count, Math.ceil(instance.cursor));
+        this.beadsDrawnLastFrame += instance.data.beadCount ? this.beadsBefore(instance.data, instance.cursor) : 0;
+      }
+      this.sunlit.render(instances, this.frameState);
+      return;
+    }
     const width = this.canvas.width;
     const height = this.canvas.height;
     const dpr = this.stage.dpr;

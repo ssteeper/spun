@@ -1,10 +1,12 @@
 import { parseSilk } from "../silk.js";
+import { QUALITY } from "../gl/sunlit.js";
 
 const INSTANCE_LIMIT = 12;
 const INSET = 4;
 const REST_SECONDS = 0.5;
 const DEW_SECONDS = 2.4 + 0.35; // latest start 2.4 s·u_i plus 0.35 s growth
 const ENV = 1 << 1;
+const SOFTWARE_GL = /swiftshader|llvmpipe|software|basic render/i;
 
 function timeAtCursor(specimen, target) {
   const timeline = specimen.timeline;
@@ -43,8 +45,11 @@ function builderRange(data) {
 }
 
 export class InstanceManager {
-  constructor({ stage, renderers, backend = "2d", overlay, onStatus = () => {}, onReady = () => {}, onBackend = () => {} }) {
+  constructor({ stage, renderers, backend = "2d", overlay, settings = null, onStatus = () => {}, onReady = () => {}, onBackend = () => {} }) {
     this.stage = stage;
+    this.settings = settings;
+    this.sceneTime = 0;
+    this.autoQuality = null;
     this.renderers = renderers;
     this.onBackend = onBackend;
     this.backend = renderers[backend] ? backend : "2d";
@@ -127,7 +132,7 @@ export class InstanceManager {
       normalizedX: this.stage.width ? x / this.stage.width : 0.5,
       normalizedY: this.stage.height ? y / this.stage.height : 0.5,
     };
-    if (this.mode === "dawn") instance.dewOrigin = instance.duration;
+    if (this.dewWanted()) instance.dewOrigin = instance.duration;
     if (instance.reducedMotion) instance.elapsed = this.endTime(instance);
     this.place(instance);
     if (this.instances.length === INSTANCE_LIMIT) {
@@ -189,16 +194,83 @@ export class InstanceManager {
 
   endTime(instance) {
     const settled = instance.duration + REST_SECONDS;
-    return instance.dewOrigin == null ? settled : Math.max(settled, instance.dewOrigin + DEW_SECONDS);
+    return instance.dewOrigin == null ? settled : Math.max(settled, instance.dewOrigin + DEW_SECONDS / this.dewSpeed());
+  }
+
+  // Dew condenses on finished webs in Dawn unless the Dew settings say always or never.
+  dewWanted() {
+    return this.settings ? this.settings.dewWanted(this.mode) : this.mode === "dawn";
+  }
+
+  dewSpeed() {
+    return this.settings?.values.dew.speed ?? 1;
   }
 
   advance() {
+    const speed = this.dewSpeed();
     for (const instance of this.instances) {
       instance.cursor = instance.data.cursorAt(Math.min(instance.duration, instance.elapsed));
       instance.label = instance.data.labelAt(instance.cursor);
       const complete = instance.cursor >= instance.data.count;
-      instance.dewAge = complete && instance.dewOrigin != null ? Math.max(-1, instance.elapsed - instance.dewOrigin) : -1;
+      instance.dewAge = complete && instance.dewOrigin != null ? Math.max(-1, (instance.elapsed - instance.dewOrigin) * speed) : -1;
     }
+  }
+
+  // Sunlit needs the WebGL2 backend with float targets; otherwise the Classic look is drawn.
+  effectiveLook() {
+    const gl = this.renderers.gl;
+    return this.backend === "gl" && gl?.sunlitAvailable && this.settings?.values.look === "sunlit" ? "sunlit" : "classic";
+  }
+
+  // Breeze strength; reduced-motion users get a still scene.
+  motion() {
+    return this.reducedMotion ? 0 : (this.settings?.values.motion ?? 0);
+  }
+
+  ambientActive() {
+    return !this.frozen && this.effectiveLook() === "sunlit" && this.motion() > 0;
+  }
+
+  quality() {
+    let name = this.settings?.values.quality ?? "auto";
+    if (name === "auto") {
+      if (!this.autoQuality) {
+        const renderer = this.renderers.gl?.rendererName || "";
+        const handheld = matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 900;
+        this.autoQuality = SOFTWARE_GL.test(renderer) ? "low" : handheld ? "medium" : "high";
+      }
+      name = this.autoQuality;
+    }
+    return { name, ...QUALITY[name] };
+  }
+
+  prepareFrame() {
+    const look = this.effectiveLook();
+    const gl = this.renderers.gl;
+    if (gl) {
+      gl.look = look;
+      gl.frameState = look === "sunlit"
+        ? { settings: this.settings, mode: this.mode, stage: this.stage, time: this.sceneTime, motion: this.motion(), quality: this.quality() }
+        : null;
+    }
+    this.overlay.enabled = !(look === "sunlit" && this.settings?.values.spiders.model === "3d");
+  }
+
+  // Re-evaluates each web's dew clock after a mode or Dew-setting change.
+  refreshDew() {
+    const wanted = this.dewWanted();
+    for (const instance of this.instances) {
+      if (wanted && instance.dewOrigin == null) {
+        // Dew clock origin: the later of the web's completion and the moment dew was wanted.
+        instance.dewOrigin = Math.max(instance.duration, instance.elapsed);
+        if (instance.reducedMotion) instance.elapsed = this.endTime(instance);
+      } else if (!wanted && instance.dewOrigin != null) {
+        instance.dewOrigin = null;
+        instance.elapsed = Math.min(instance.elapsed, this.endTime(instance));
+      }
+    }
+    this.advance();
+    this.requestFrame();
   }
 
   dewVisible(instance) {
@@ -234,13 +306,15 @@ export class InstanceManager {
       for (const instance of this.instances) {
         instance.elapsed = Math.min(this.endTime(instance), instance.elapsed + delta);
       }
+      if (this.ambientActive()) this.sceneTime += Math.min(delta, 0.1);
     }
     this.advance();
+    this.prepareFrame();
     this.renderer.render(this.instances);
     this.overlay.draw(this.instances);
     this.framesRendered++;
     this.updateStatus(timestamp);
-    if (!this.frozen && this.instances.some(instance => instance.elapsed < this.endTime(instance))) {
+    if (!this.frozen && (this.ambientActive() || this.instances.some(instance => instance.elapsed < this.endTime(instance)))) {
       this.rafId = requestAnimationFrame(next => this.frame(next));
       return;
     }
@@ -284,6 +358,7 @@ export class InstanceManager {
 
   clear() {
     this.instances.length = 0;
+    this.prepareFrame();
     this.renderer.render([]);
     this.overlay.draw([]);
     this.frozen = false;
@@ -292,6 +367,7 @@ export class InstanceManager {
     this.rafId = 0;
     this.lastTimestamp = null;
     this.updateStatus();
+    if (this.ambientActive()) this.requestFrame();
   }
 
   setBackend(value) {
@@ -309,18 +385,7 @@ export class InstanceManager {
     if (value === this.mode) return true;
     this.mode = value;
     for (const renderer of Object.values(this.renderers)) renderer.mode = value;
-    for (const instance of this.instances) {
-      if (value === "dawn") {
-        // Dew clock origin: the later of the web's completion and the moment Dawn was switched on.
-        instance.dewOrigin = Math.max(instance.duration, instance.elapsed);
-        if (instance.reducedMotion) instance.elapsed = this.endTime(instance);
-      } else {
-        instance.dewOrigin = null;
-        instance.elapsed = Math.min(instance.elapsed, this.endTime(instance));
-      }
-    }
-    this.advance();
-    this.requestFrame();
+    this.refreshDew();
     return true;
   }
 
@@ -331,8 +396,16 @@ export class InstanceManager {
   }
 
   stats() {
+    const sunlit = this.renderers.gl?.sunlit;
     return {
       backend: this.backend,
+      look: this.effectiveLook(),
+      sunlitAvailable: Boolean(this.renderers.gl?.sunlitAvailable),
+      quality: this.effectiveLook() === "sunlit" ? this.quality().name : null,
+      sceneTime: this.sceneTime,
+      ambient: this.ambientActive(),
+      spidersDrawnLastFrame: sunlit && this.effectiveLook() === "sunlit" ? sunlit.stats.spidersDrawn : 0,
+      canopyInstances: sunlit?.stats.canopyInstances ?? 0,
       instances: this.instances.length,
       rafActive: this.rafActive,
       framesRendered: this.framesRendered,

@@ -27,18 +27,19 @@
         <button class="segment" type="button" role="radio" aria-checked="true" tabindex="0" data-value="dusk">Dusk</button>
         <button class="segment" type="button" role="radio" aria-checked="false" tabindex="-1" data-value="dawn">Dawn</button>
       </div>
-      <div class="control-group" role="radiogroup" aria-label="Renderer" id="backend-group">
-        <button class="segment" type="button" role="radio" aria-checked="true" tabindex="0" data-value="2d">2D</button>
-        <button class="segment" type="button" role="radio" aria-checked="false" tabindex="-1" data-value="gl" disabled>GL</button>
-      </div>
+      <button class="scene-button" id="scene-button" type="button" aria-expanded="false" aria-controls="scene-panel">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.4"/><path d="M10 1.6v2.6M10 15.8v2.6M1.6 10h2.6M15.8 10h2.6M4.1 4.1l1.8 1.8M14.1 14.1l1.8 1.8M4.1 15.9l1.8-1.8M14.1 5.9l1.8-1.8"/></svg>
+        <span>Scene</span>
+      </button>
       <button class="clear-button" id="clear-button" type="button">Clear <kbd>Esc</kbd></button>
     </header>
     <section class="stage" id="stage" aria-label="Web building stage">
       <canvas id="gl-canvas" class="inactive" aria-hidden="true"></canvas>
-      <canvas id="web-canvas" tabindex="0" aria-label="A dark stage where spider webs are planted and built. Click or tap to plant the selected spider web; press Enter or Space while focused to plant at the centre. Press Escape to clear."></canvas>
+      <canvas id="web-canvas" tabindex="0" aria-label="A stage where spider webs are planted and built. Click or tap to plant the selected spider web; press Enter or Space while focused to plant at the centre. Press Escape to clear."></canvas>
       <canvas id="overlay-canvas" aria-hidden="true"></canvas>
       <p class="stage-hint" id="stage-hint">Choose a species, then click anywhere to plant.</p>
     </section>
+    <aside class="scene-panel" id="scene-panel" aria-label="Scene settings" hidden></aside>
     <span class="sr-only" id="live-status" role="status" aria-live="polite" aria-atomic="true"></span>
   </main>
 </body>

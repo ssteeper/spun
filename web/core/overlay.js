@@ -9,11 +9,13 @@ export class SpiderOverlay {
   constructor(stage) {
     this.stage = stage;
     this.ctx = stage.overlayCtx;
+    this.enabled = true; // false while the Sunlit renderer draws the 3-D spiders itself
   }
 
   draw(instances) {
     const { ctx, stage } = this;
     ctx.clearRect(0, 0, stage.width, stage.height);
+    if (!this.enabled) return;
     for (const instance of instances) {
       const data = instance.data;
       const spiders = data.specimen.spiders || [];

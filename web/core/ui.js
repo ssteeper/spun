@@ -49,7 +49,7 @@ const CHIP_LABELS = Object.freeze({
 });
 
 export class ViewerUI {
-  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup, backendGroup }, { onSelect, onClear, onBackend = () => {}, onMode = () => {} }) {
+  constructor({ rows, status, liveStatus, stageHint, clearButton, modeGroup }, { onSelect, onClear, onEscape = onClear, onMode = () => {} }) {
     this.rows = rows;
     this.status = status;
     this.liveStatus = liveStatus;
@@ -62,21 +62,13 @@ export class ViewerUI {
     this.liveTimer = 0;
     clearButton.addEventListener("click", onClear);
     this.modeGroup = makeRadioGroup(modeGroup, value => onMode(value));
-    this.backendGroup = makeRadioGroup(backendGroup, value => onBackend(value));
     window.addEventListener("keydown", event => {
-      if (event.key === "Escape") onClear();
+      if (event.key === "Escape") onEscape();
     });
   }
 
   setMode(mode) {
     this.modeGroup.mark(this.modeGroup.buttons.find(button => button.dataset.value === mode));
-  }
-
-  setBackendState(glAvailable, backend) {
-    const buttons = this.backendGroup.buttons;
-    const gl = buttons.find(button => button.dataset.value === "gl");
-    gl.disabled = !glAvailable;
-    this.backendGroup.mark(buttons.find(button => button.dataset.value === backend) || buttons[0]);
   }
 
   renderSpecimens(specimens, selectedId) {
