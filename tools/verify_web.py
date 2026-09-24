@@ -33,6 +33,8 @@ SHELL_PATHS = {"/", "/index.html", "/style.css", "/app.js", "/silk.js", "/core/s
                "/core/render2d.js", "/core/overlay.js", "/core/ui.js", "/gl/glRenderer.js", "/gl/shaders.js",
                "/manifest.webmanifest", "/icons/favicon.svg", "/icons/apple-touch-icon.png"}
 SWIFTSHADER_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+HARDWARE_FLAGS = ["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=d3d11"] if sys.platform == "win32" else ["--enable-gpu", "--ignore-gpu-blocklist"]
+SOFTWARE_WORDS = ("swiftshader", "software", "llvmpipe", "basic render driver")
 
 try:
     import numpy as np
@@ -141,17 +143,27 @@ class Harness:
         raise RuntimeError("; ".join(errors))
 
     def start(self):
+        # Hardware GPU first; accept it only if the renderer names a real adapter.
+        self.flags = HARDWARE_FLAGS
         self.browser = self.launch()
         renderer = self.gl_renderer()
-        if not renderer:
+        self.env["mode"] = "hardware GPU"
+        if not renderer or any(word in renderer.lower() for word in SOFTWARE_WORDS):
             self.browser.close()
-            self.flags = SWIFTSHADER_FLAGS
+            self.flags = []
             self.browser = self.launch()
             renderer = self.gl_renderer()
+            self.env["mode"] = "default (software)"
+            if not renderer:
+                self.browser.close()
+                self.flags = SWIFTSHADER_FLAGS
+                self.browser = self.launch()
+                renderer = self.gl_renderer()
+                self.env["mode"] = "swiftshader"
         self.env.update({"browserVersion": self.browser.version, "launchFlags": list(self.flags), "glRenderer": renderer,
                          "webgl2": bool(renderer), "headless": True})
         lowered = (renderer or "").lower()
-        self.env["softwareRenderer"] = any(word in lowered for word in ("swiftshader", "software", "llvmpipe"))
+        self.env["softwareRenderer"] = any(word in lowered for word in SOFTWARE_WORDS)
 
     def gl_renderer(self):
         ctx, page, _ = self.context()
@@ -713,26 +725,29 @@ def check_keyboard(h: Harness):
 def check_performance(h: Harness):
     ctx, page, log = h.context()
     try:
-        numbers = {"glRenderer": h.env.get("glRenderer"), "softwareRenderer": h.env.get("softwareRenderer")}
-        for backend in h.backends():
-            page.evaluate(f"window.__spun.clear(); window.__spun.setBackend('{backend}')")
-            page.evaluate("id => Promise.all(Array.from({length: 12}, (_, i) => window.__spun.plant(id, 110 + (i % 6) * 210, 200 + Math.floor(i / 6) * 330)))", h.default)
-            times = page.evaluate("""() => new Promise(resolve => {
-              const out = []; let last = null;
-              const tick = t => {
-                if (last !== null) out.push(t - last);
-                last = t;
-                if (window.__spun.stats().rafActive && out.length < 240) requestAnimationFrame(tick); else resolve(out);
-              };
-              requestAnimationFrame(tick);
-            })""")
-            ordered = sorted(times)
-            numbers[backend] = {"frames": len(times), "meanMs": round(sum(times) / len(times), 2) if times else None,
-                                "p95Ms": round(ordered[int(0.95 * (len(ordered) - 1))], 2) if times else None}
-        numbers["note"] = ("software renderer: these timings are not representative of GPU hardware; no 60 fps claim"
+        numbers = {"glRenderer": h.env.get("glRenderer"), "hardware": not h.env.get("softwareRenderer")}
+        species = list(dict.fromkeys(sid for sid in (h.default, "golden-orb-weaver") if sid in h.specs))
+        ok = True
+        for sid in species:
+            for backend in h.backends():
+                page.evaluate(f"window.__spun.clear(); window.__spun.setBackend('{backend}')")
+                page.evaluate("id => Promise.all(Array.from({length: 12}, (_, i) => window.__spun.plant(id, 110 + (i % 6) * 210, 200 + Math.floor(i / 6) * 330)))", sid)
+                times = page.evaluate("""() => new Promise(resolve => {
+                  const out = []; let last = null;
+                  const tick = t => {
+                    if (last !== null) out.push(t - last);
+                    last = t;
+                    if (window.__spun.stats().rafActive && out.length < 240) requestAnimationFrame(tick); else resolve(out);
+                  };
+                  requestAnimationFrame(tick);
+                })""")
+                ordered = sorted(times)
+                ok &= len(times) > 0
+                numbers[f"{sid}:{backend}"] = {"frames": len(times), "meanMs": round(sum(times) / len(times), 2) if times else None,
+                                               "p95Ms": round(ordered[int(0.95 * (len(ordered) - 1))], 2) if times else None}
+        numbers["note"] = ("software renderer: timings are not representative of GPU hardware; no 60 fps claim"
                            if h.env.get("softwareRenderer") else "hardware GPU as named in glRenderer")
-        ok = all(numbers[b]["frames"] > 0 for b in h.backends()) and not log["errors"]
-        return ok, numbers, []
+        return ok and not log["errors"], numbers, []
     finally:
         ctx.close()
 
@@ -867,7 +882,7 @@ def brief_numbers(numbers: dict) -> str:
 def write_readme(report: dict) -> None:
     env = report["environment"]
     lines = ["# Web verification", "", "Generated by `tools/verify_web.py`; do not edit by hand.", "", "## Environment", ""]
-    for key in ("browserVersion", "channel", "launchFlags", "glRenderer", "softwareRenderer", "webgl2", "headless"):
+    for key in ("mode", "browserVersion", "channel", "launchFlags", "glRenderer", "softwareRenderer", "webgl2", "headless"):
         lines.append(f"- {key}: `{env.get(key)}`")
     if env.get("softwareRenderer"):
         lines.append("- The GL renderer is a software rasterizer; performance numbers are not representative and no 60 fps claim is made.")

@@ -1,0 +1,688 @@
+{
+  "environment": {
+    "channel": "chromium (playwright)",
+    "mode": "hardware GPU",
+    "browserVersion": "153.0.8010.12",
+    "launchFlags": [
+      "--enable-gpu",
+      "--ignore-gpu-blocklist",
+      "--use-angle=d3d11"
+    ],
+    "glRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "webgl2": true,
+    "headless": true,
+    "softwareRenderer": false
+  },
+  "checks": [
+    {
+      "id": "cold-load",
+      "title": "Cold load",
+      "status": "PASS",
+      "numbers": {
+        "consoleErrors": [],
+        "failedRequests": [],
+        "httpErrors": [],
+        "fetched": [
+          "/",
+          "/app.js",
+          "/core/instances.js",
+          "/core/overlay.js",
+          "/core/render2d.js",
+          "/core/stage.js",
+          "/core/ui.js",
+          "/gl/glRenderer.js",
+          "/gl/shaders.js",
+          "/silk.js",
+          "/specimens/argiope.silk",
+          "/specimens/index.json",
+          "/style.css"
+        ],
+        "unexpected": [],
+        "indexBytes": 110343,
+        "defaultSilkBytes": 237872,
+        "budgetBytes": 409600
+      },
+      "evidence": []
+    },
+    {
+      "id": "all-species",
+      "title": "All species, both backends",
+      "status": "PASS",
+      "numbers": {
+        "species": {
+          "2d:golden-orb-weaver": {
+            "decoded": {
+              "segments": 18020,
+              "beads": 32000
+            },
+            "cursor": 18020,
+            "ok": true
+          },
+          "2d:st-andrews-cross": {
+            "decoded": {
+              "segments": 7196,
+              "beads": 11740
+            },
+            "cursor": 7196,
+            "ok": true
+          },
+          "2d:garden-orb-weaver": {
+            "decoded": {
+              "segments": 5170,
+              "beads": 12876
+            },
+            "cursor": 5170,
+            "ok": true
+          },
+          "2d:leaf-curling-spider": {
+            "decoded": {
+              "segments": 5989,
+              "beads": 15590
+            },
+            "cursor": 5989,
+            "ok": true
+          },
+          "2d:christmas-jewel-spider": {
+            "decoded": {
+              "segments": 8990,
+              "beads": 10415
+            },
+            "cursor": 8990,
+            "ok": true
+          },
+          "2d:scorpion-tailed-spider": {
+            "decoded": {
+              "segments": 6295,
+              "beads": 7266
+            },
+            "cursor": 6295,
+            "ok": true
+          },
+          "2d:net-casting-spider": {
+            "decoded": {
+              "segments": 2681,
+              "beads": 400
+            },
+            "cursor": 2681,
+            "ok": true
+          },
+          "2d:magnificent-spider": {
+            "decoded": {
+              "segments": 953,
+              "beads": 143
+            },
+            "cursor": 953,
+            "ok": true
+          },
+          "2d:redback-spider": {
+            "decoded": {
+              "segments": 1976,
+              "beads": 499
+            },
+            "cursor": 1976,
+            "ok": true
+          },
+          "gl:golden-orb-weaver": {
+            "decoded": {
+              "segments": 18020,
+              "beads": 32000
+            },
+            "cursor": 18020,
+            "ok": true
+          },
+          "gl:st-andrews-cross": {
+            "decoded": {
+              "segments": 7196,
+              "beads": 11740
+            },
+            "cursor": 7196,
+            "ok": true
+          },
+          "gl:garden-orb-weaver": {
+            "decoded": {
+              "segments": 5170,
+              "beads": 12876
+            },
+            "cursor": 5170,
+            "ok": true
+          },
+          "gl:leaf-curling-spider": {
+            "decoded": {
+              "segments": 5989,
+              "beads": 15590
+            },
+            "cursor": 5989,
+            "ok": true
+          },
+          "gl:christmas-jewel-spider": {
+            "decoded": {
+              "segments": 8990,
+              "beads": 10415
+            },
+            "cursor": 8990,
+            "ok": true
+          },
+          "gl:scorpion-tailed-spider": {
+            "decoded": {
+              "segments": 6295,
+              "beads": 7266
+            },
+            "cursor": 6295,
+            "ok": true
+          },
+          "gl:net-casting-spider": {
+            "decoded": {
+              "segments": 2681,
+              "beads": 400
+            },
+            "cursor": 2681,
+            "ok": true
+          },
+          "gl:magnificent-spider": {
+            "decoded": {
+              "segments": 953,
+              "beads": 143
+            },
+            "cursor": 953,
+            "ok": true
+          },
+          "gl:redback-spider": {
+            "decoded": {
+              "segments": 1976,
+              "beads": 499
+            },
+            "cursor": 1976,
+            "ok": true
+          }
+        },
+        "backends": [
+          "2d",
+          "gl"
+        ],
+        "consoleErrors": []
+      },
+      "evidence": []
+    },
+    {
+      "id": "parity",
+      "title": "2D/GL parity",
+      "status": "PASS",
+      "numbers": {
+        "st-andrews-cross:40pct:glowOff": {
+          "mad": 4.221,
+          "pixels": 23823,
+          "limit": 12
+        },
+        "st-andrews-cross:40pct:glowOn": {
+          "mad": 3.196,
+          "pixels": 42123,
+          "limit": 14
+        },
+        "st-andrews-cross:end:glowOff": {
+          "mad": 3.1,
+          "pixels": 40350,
+          "limit": 12
+        },
+        "st-andrews-cross:end:glowOn": {
+          "mad": 2.757,
+          "pixels": 64053,
+          "limit": 14
+        },
+        "golden-orb-weaver:40pct:glowOff": {
+          "mad": 5.039,
+          "pixels": 36078,
+          "limit": 12
+        },
+        "golden-orb-weaver:40pct:glowOn": {
+          "mad": 3.886,
+          "pixels": 67903,
+          "limit": 14
+        },
+        "golden-orb-weaver:end:glowOff": {
+          "mad": 3.023,
+          "pixels": 72403,
+          "limit": 12
+        },
+        "golden-orb-weaver:end:glowOn": {
+          "mad": 3.619,
+          "pixels": 86547,
+          "limit": 14
+        },
+        "net-casting-spider:40pct:glowOff": {
+          "mad": 2.347,
+          "pixels": 10073,
+          "limit": 12
+        },
+        "net-casting-spider:40pct:glowOn": {
+          "mad": 2.704,
+          "pixels": 11536,
+          "limit": 14
+        },
+        "net-casting-spider:end:glowOff": {
+          "mad": 5.29,
+          "pixels": 11301,
+          "limit": 12
+        },
+        "net-casting-spider:end:glowOn": {
+          "mad": 6.04,
+          "pixels": 13939,
+          "limit": 14
+        },
+        "consoleErrors": []
+      },
+      "evidence": [
+        "parity-default-end-gl.png",
+        "parity-default-end-2d.png"
+      ]
+    },
+    {
+      "id": "zero-uploads",
+      "title": "Zero uploads while growing",
+      "status": "PASS",
+      "numbers": {
+        "frames": 120,
+        "maxUploadsPerFrame": 0,
+        "framesGrowing": 120,
+        "uploadsTotal": 5
+      },
+      "evidence": []
+    },
+    {
+      "id": "settle-and-stop",
+      "title": "Settle-and-stop",
+      "status": "PASS",
+      "numbers": {
+        "2d": {
+          "rafActive": false,
+          "framesAt1s": 1832,
+          "framesAt1_5s": 1832
+        },
+        "gl": {
+          "rafActive": false,
+          "framesAt1s": 3666,
+          "framesAt1_5s": 3666
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "eating",
+      "title": "Eating (argiope, golden)",
+      "status": "PASS",
+      "numbers": {
+        "argiope:2d": {
+          "record": 5053,
+          "death": 6157,
+          "cursor": 6070.5,
+          "fadeAlphaMid": 1.0,
+          "probe": [
+            717.5,
+            359.5
+          ],
+          "clearanceDevicePx": 4.57,
+          "dpr": 3,
+          "deltaMid": 89,
+          "deltaEnd": 0
+        },
+        "argiope:gl": {
+          "record": 5053,
+          "death": 6157,
+          "cursor": 6070.5,
+          "fadeAlphaMid": 1.0,
+          "probe": [
+            717.5,
+            359.5
+          ],
+          "clearanceDevicePx": 4.57,
+          "dpr": 3,
+          "deltaMid": 87,
+          "deltaEnd": 0
+        },
+        "golden:2d": {
+          "record": 12112,
+          "probe": [
+            641.0,
+            552.9
+          ],
+          "clearanceDevicePx": 3.1,
+          "dpr": 3,
+          "deltaEnd": 99
+        },
+        "golden:gl": {
+          "record": 12112,
+          "probe": [
+            641.0,
+            552.9
+          ],
+          "clearanceDevicePx": 3.1,
+          "dpr": 3,
+          "deltaEnd": 97
+        }
+      },
+      "evidence": [
+        "eating-argiope-mid.png",
+        "eating-argiope-end.png",
+        "eating-golden-end.png"
+      ]
+    },
+    {
+      "id": "dew",
+      "title": "Dew and glue",
+      "status": "PASS",
+      "numbers": {
+        "dawn:2d": {
+          "species": "golden-orb-weaver",
+          "framesGrowing": 2510,
+          "maxDewWhileGrowing": 0,
+          "framesAfterCompletion": 63,
+          "finalDew": 32000
+        },
+        "dawn:gl": {
+          "species": "golden-orb-weaver",
+          "framesGrowing": 2509,
+          "maxDewWhileGrowing": 0,
+          "framesAfterCompletion": 166,
+          "finalDew": 32000
+        },
+        "glue:redback-spider:2d": {
+          "bead": 498,
+          "radiusPx": 0.73,
+          "probe": [
+            1038.0,
+            701.9
+          ],
+          "delta": 167
+        },
+        "glue:redback-spider:gl": {
+          "bead": 498,
+          "radiusPx": 0.73,
+          "probe": [
+            1038.0,
+            701.9
+          ],
+          "delta": 164
+        },
+        "glue:magnificent-spider:2d": {
+          "bead": 142,
+          "radiusPx": 4.14,
+          "probe": [
+            640.0,
+            485.9
+          ],
+          "delta": 232
+        },
+        "glue:magnificent-spider:gl": {
+          "bead": 142,
+          "radiusPx": 4.14,
+          "probe": [
+            640.0,
+            485.9
+          ],
+          "delta": 232
+        }
+      },
+      "evidence": [
+        "dew-dawn.png",
+        "glue-redback-spider.png",
+        "glue-magnificent-spider.png"
+      ]
+    },
+    {
+      "id": "cap-and-fit",
+      "title": "Cap and fit",
+      "status": "PASS",
+      "numbers": {
+        "planted": 13,
+        "live": 12,
+        "cornerInsets": [
+          4.0,
+          4.0,
+          4.0,
+          4.0
+        ]
+      },
+      "evidence": [
+        "corners.png"
+      ]
+    },
+    {
+      "id": "reduced-motion",
+      "title": "Reduced motion",
+      "status": "PASS",
+      "numbers": {
+        "2d": {
+          "cursor": 7196,
+          "segments": 7196
+        },
+        "gl": {
+          "cursor": 7196,
+          "segments": 7196
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "fallback",
+      "title": "Fallback and persistence",
+      "status": "PASS",
+      "numbers": {
+        "nogl": {
+          "backend": "2d",
+          "glDisabled": true,
+          "consoleErrors": []
+        },
+        "persistedAfterReload": {
+          "2d": "2d",
+          "gl": "gl"
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "context-loss",
+      "title": "Context loss",
+      "status": "PASS",
+      "numbers": {
+        "maxPixelDiff": 0
+      },
+      "evidence": [
+        "context-before.png",
+        "context-after.png"
+      ]
+    },
+    {
+      "id": "sw-install",
+      "title": "Service worker install",
+      "status": "PASS",
+      "numbers": {
+        "state": "activated",
+        "precachedEntries": 18,
+        "missing": [],
+        "httpErrors": [],
+        "consoleErrors": []
+      },
+      "evidence": []
+    },
+    {
+      "id": "offline",
+      "title": "Offline",
+      "status": "PASS",
+      "numbers": {
+        "offlinePlants": {
+          "st-andrews-cross": 1,
+          "golden-orb-weaver": 1
+        },
+        "consoleErrors": []
+      },
+      "evidence": [
+        "offline-reload.png"
+      ]
+    },
+    {
+      "id": "mobile",
+      "title": "Mobile 390x844",
+      "status": "PASS",
+      "numbers": {
+        "documentWidth": 390,
+        "viewport": 390,
+        "stripClient": 366,
+        "stripScroll": 733,
+        "before": 0,
+        "after": 367
+      },
+      "evidence": [
+        "mobile-390.png"
+      ]
+    },
+    {
+      "id": "keyboard",
+      "title": "Keyboard",
+      "status": "PASS",
+      "numbers": {
+        "firstChip": "st-andrews-cross",
+        "afterArrow": "garden-orb-weaver",
+        "checked": "garden-orb-weaver",
+        "reachedStage": true,
+        "plantedWithEnter": "garden-orb-weaver",
+        "escapeCleared": true
+      },
+      "evidence": []
+    },
+    {
+      "id": "accessibility",
+      "title": "Accessibility and layout",
+      "status": "PASS",
+      "numbers": {
+        "contrast": {
+          "elements": 24,
+          "min": {
+            "selector": "button.chip",
+            "text": "Golden Orb",
+            "ratio": 6.7
+          },
+          "below4_5": []
+        },
+        "radiogroups": [
+          {
+            "label": "Spider species",
+            "radios": 9,
+            "tabZero": 1
+          },
+          {
+            "label": "Lighting mode",
+            "radios": 2,
+            "tabZero": 1
+          },
+          {
+            "label": "Renderer",
+            "radios": 2,
+            "tabZero": 1
+          }
+        ],
+        "homeEnd": {
+          "species-rows": {
+            "end": "Redback",
+            "home": "Golden Orb"
+          },
+          "mode-group": {
+            "end": "Dawn",
+            "home": "Dusk"
+          },
+          "backend-group": {
+            "end": "GL",
+            "home": "2D"
+          }
+        },
+        "focusRing": {
+          "chip": {
+            "focused": "chip",
+            "outline": true,
+            "boxShadow": false
+          },
+          "stage": {
+            "focused": "web-canvas",
+            "outline": false,
+            "boxShadow": true
+          }
+        },
+        "aria": {
+          "live": "polite",
+          "canvasTabIndex": 0,
+          "canvasLabel": true,
+          "globals": [
+            "__spun"
+          ]
+        },
+        "layout": {
+          "1280": {
+            "scrollWidth": 1280,
+            "viewport": 1280,
+            "headerRows": 1,
+            "headerHeight": 86,
+            "brandTitleLines": 1,
+            "controlGroups": 4
+          },
+          "1100": {
+            "scrollWidth": 1100,
+            "viewport": 1100,
+            "headerRows": 1,
+            "headerHeight": 86,
+            "brandTitleLines": 1,
+            "controlGroups": 4
+          },
+          "720": {
+            "scrollWidth": 720,
+            "viewport": 720,
+            "headerRows": 3,
+            "headerHeight": 137,
+            "brandTitleLines": 1,
+            "controlGroups": 4
+          },
+          "390": {
+            "scrollWidth": 390,
+            "viewport": 390,
+            "headerRows": 3,
+            "headerHeight": 137,
+            "brandTitleLines": 1,
+            "controlGroups": 4
+          }
+        },
+        "debugGlobalWithoutFlag": false
+      },
+      "evidence": [
+        "layout-1280.png"
+      ]
+    },
+    {
+      "id": "performance",
+      "title": "Performance (12 growing webs)",
+      "status": "PASS",
+      "numbers": {
+        "glRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "hardware": true,
+        "st-andrews-cross:2d": {
+          "frames": 240,
+          "meanMs": 16.67,
+          "p95Ms": 16.8
+        },
+        "st-andrews-cross:gl": {
+          "frames": 240,
+          "meanMs": 16.67,
+          "p95Ms": 16.7
+        },
+        "golden-orb-weaver:2d": {
+          "frames": 240,
+          "meanMs": 16.67,
+          "p95Ms": 16.7
+        },
+        "golden-orb-weaver:gl": {
+          "frames": 240,
+          "meanMs": 16.67,
+          "p95Ms": 16.8
+        },
+        "note": "hardware GPU as named in glRenderer"
+      },
+      "evidence": []
+    }
+  ]
+}
