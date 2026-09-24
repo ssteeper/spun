@@ -125,14 +125,20 @@ export class SpiderRenderer {
       if (bodyVisible) {
         const [ax, arx, ary] = species.abd;
         const [kx, krx, kry] = species.car;
-        minX = Math.min(minX, ax - arx * 1.1 - (species.pattern === PATTERN.scorpionTail ? 0.75 * L : 0));
-        maxX = Math.max(maxX, kx + krx + 0.3 * L);
+        const bodyMin = ax - arx * 1.1 - (species.pattern === PATTERN.scorpionTail ? 0.75 * L : 0);
+        const bodyMax = kx + krx + 0.3 * L;
         const half = Math.max(ary, kry) * 1.1 + (species.pattern === PATTERN.jewel ? 0.45 * L : 0.05 * L) +
           (species.pattern === PATTERN.scorpionTail ? 0.25 * L : 0);
+        const bodyTop = species.bodyZ[0] + species.abd[3] * 1.2 + (species.pattern === PATTERN.magnificent ? 0.25 * L : 0) +
+          (species.pattern === PATTERN.scorpionTail ? 0.6 * L : 0) + (species.pattern === PATTERN.jewel ? 0.2 * L : 0);
+        minX = Math.min(minX, bodyMin);
+        maxX = Math.max(maxX, bodyMax);
         minY = Math.min(minY, -half);
         maxY = Math.max(maxY, half);
-        zTop = Math.max(zTop, species.bodyZ[0] + species.abd[3] * 1.2 + (species.pattern === PATTERN.magnificent ? 0.25 * L : 0) +
-          (species.pattern === PATTERN.scorpionTail ? 0.6 * L : 0) + (species.pattern === PATTERN.jewel ? 0.2 * L : 0));
+        zTop = Math.max(zTop, bodyTop);
+        this.bodyBox = [bodyMin, bodyMax, half, bodyTop];
+      } else {
+        this.bodyBox = [0, 0, 0, 0];
       }
       const margin = species.legR[0] * 2 + 0.03 * L;
       minX -= margin;
@@ -161,6 +167,7 @@ export class SpiderRenderer {
       gl.uniform1f(u.u_zTop, zTop + species.legR[0] * 2);
       gl.uniform3fv(u["u_joints"], this.joints);
       gl.uniform4fv(u["u_legBounds"], this.bounds);
+      gl.uniform4fv(u.u_bodyBox, this.bodyBox);
       gl.uniform4fv(u.u_abd, species.abd);
       gl.uniform4fv(u.u_car, species.car);
       gl.uniform2fv(u.u_bodyZ, species.bodyZ);

@@ -8,7 +8,7 @@ import {
   SILK_VS, SILK_FS, LEAFMESH_VS, LEAFMESH_FS, DEW_VS, DEW_FS, MOTE_VS, MOTE_FS, BLOOM_DOWN_FS, BLOOM_UP_FS,
   STREAK_FS, BRIGHT_FS, COMPOSITE_FS,
 } from "./sunlitShaders.js";
-import { generateCanopy, generateForeground, generateBokeh, generateMotes, hexToRgb, INSTANCE_FLOATS } from "./canopy.js";
+import { generateCanopy, generateForeground, generateBokeh, generateMotes, hexToRgb } from "./canopy.js";
 import { buildLeafMesh, LEAF_VERTEX_FLOATS } from "./leafMesh.js";
 import { SpiderRenderer } from "./spiders.js";
 
@@ -41,7 +41,7 @@ export class SunlitPipeline {
   constructor(owner) {
     this.owner = owner;
     this.gl = owner.gl;
-    this.stats = { canopyInstances: 0, leafMeshes: 0, spidersDrawn: 0, dewDrawn: 0, framesRendered: 0 };
+    this.stats = { canopyInstances: 0, spidersDrawn: 0, dewDrawn: 0, framesRendered: 0 };
     this.setup();
   }
 
@@ -473,7 +473,7 @@ export class SunlitPipeline {
       u_light: targets.light, u_foreground: targets.foreground, u_canopy: targets.canopy, u_sunH: env.sunH,
       u_sunRadiance: env.sunRadiance, u_hazeColor: env.hazeColor, u_sunDir: env.sunDir, u_haze: env.haze, u_rays: env.rays,
       u_backlight: env.backlight, u_bloom: cam.bloom, u_star: starOn ? 0.55 * s.dew.glint : 0, u_exposure: cam.exposure,
-      u_contrast: cam.contrast, u_saturation: cam.saturation, u_whiteBalance: whiteBalance(cam.warmth), u_vignette: cam.vignette,
+      u_contrast: cam.contrast, u_saturation: cam.saturation, u_whiteBalance: whiteBalance(cam.warmth), u_splitTone: cam.tone, u_vignette: cam.vignette,
       u_grain: cam.grain, u_aberration: cam.aberration, u_flare: cam.flare, u_time: motion > 0 ? time : 0,
       u_foregroundOn: foreground ? 1 : 0, u_eyeZ: EYE_Z, u_debug: this.debugView || 0,
       u_spikes: s.foliage.blades % 2 ? s.foliage.blades * 2 : s.foliage.blades, u_sunSize: env.sunSize,

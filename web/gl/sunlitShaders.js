@@ -567,7 +567,12 @@ void main() {
     vec3 N = normalize(vec3(nrm2 * across, sqrt(max(0.0, 1.0 - across * across))));
     float nativeAlong = along * sqrt(L2) / pxPerNative;
     vec2 np = v_native + dir2 * nativeAlong;
-    bool leafLine = kind == 0 && v_color.a < 0.95;
+    // Leaf margins and veins are warm browns at alpha below 1; the redback's timber and grain are
+    // near-neutral greys and are shaded as flat planks rather than round bark.
+    float warmth = v_color.r - v_color.b;
+    bool leafLine = kind == 0 && v_color.a < 0.95 && warmth > 0.12;
+    bool timber = kind == 0 && !leafLine && warmth < 0.12 && abs(v_color.r - v_color.g) < 0.06;
+    if (timber) N = normalize(vec3(nrm2 * across * 0.35, 1.0));
     if (leafLine) {
       // Margins and veins of scaffold leaves: fine lines over the translucent fill.
       vec3 tint = u_leafTint * (0.55 + 0.45 * vis);
@@ -1006,6 +1011,7 @@ uniform float u_exposure;
 uniform float u_contrast;
 uniform float u_saturation;
 uniform vec3 u_whiteBalance;
+uniform float u_splitTone;
 uniform float u_vignette;
 uniform float u_grain;
 uniform float u_aberration;
@@ -1058,9 +1064,11 @@ void main() {
   float cosT = dot(view, u_sunDir);
   float phase = 0.12 + phaseHG(cosT, 0.72) * 0.9 + phaseHG(cosT, 0.25) * 0.25;
   float shafts = texture(u_light, uv).r;
-  float beam = pow(clamp(shafts, 0.0, 1.0), 1.6);
+  // Beams stand out where the march found open air between shaded stretches: stretch the marched
+  // fraction into a beam mask, and keep a little uniform glow for air with no occluders at all.
+  float beam = smoothstep(0.1, 0.55, shafts);
   vec3 airlight = mix(u_sunRadiance, u_hazeColor * luma(u_sunRadiance) * 1.4, 0.35);
-  col = col * (1.0 - u_haze * 0.12) + airlight * beam * phase * u_haze * u_rays * 0.85;
+  col = col * (1.0 - u_haze * 0.12) + airlight * (0.12 * shafts + beam * beam) * phase * u_haze * u_rays * 0.7;
   // Sun glare: veiling glare and aperture diffraction spikes, scaled by how much sun the canopy lets through.
   vec2 sd = h - u_sunH;
   float sr = length(sd);
@@ -1107,8 +1115,15 @@ void main() {
   col *= exp2(u_exposure) * u_whiteBalance;
   col = aces(col);
   float y = luma(col);
+  // Split tone: shadows lean teal and highlights amber at unchanged luminance, which keeps green
+  // foliage under a warm sun from settling into one olive middle tone.
+  vec3 tint = mix(vec3(0.8, 1.0, 1.2), vec3(1.12, 1.0, 0.8), smoothstep(0.02, 0.4, y));
+  vec3 toned = col * tint;
+  col = mix(col, toned * (y / max(luma(toned), 1e-5)), u_splitTone);
   col = mix(vec3(y), col, u_saturation);
-  col = clamp((col - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+  // Contrast as a power curve about mid-grey: a linear pivot at 0.5 would clip every channel
+  // below 0.05 to black and strip the blue from the shade.
+  col = clamp(0.18 * pow(max(col, vec3(0.0)) / 0.18, vec3(u_contrast)), 0.0, 1.0);
   float vig = length(fromCentre * vec2(1.0, u_stage.y / u_stage.x) * 1.35);
   col *= 1.0 - u_vignette * smoothstep(0.35, 1.05, vig) * 0.75;
   vec3 srgb = toSrgb(col);

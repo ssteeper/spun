@@ -3,6 +3,9 @@
 Starts tools/serve.py on a free port, drives Chromium through Playwright and writes
 web/verification/report.json, the cited screenshots and web/verification/README.md.
 Exits non-zero when any check fails.
+
+Checks that compare pixels against the flat background, or 2D against GL, pin the Classic look
+(?look=classic). The Sunlit look, the default on WebGL2, has its own checks.
 """
 from __future__ import annotations
 
@@ -30,8 +33,12 @@ KIND_AUX = 6
 FLAG_ENV, FLAG_INVISIBLE = 2, 4
 BEAD_GLUE = 2
 SHELL_PATHS = {"/", "/index.html", "/style.css", "/app.js", "/silk.js", "/core/stage.js", "/core/instances.js",
-               "/core/render2d.js", "/core/overlay.js", "/core/ui.js", "/gl/glRenderer.js", "/gl/shaders.js",
-               "/manifest.webmanifest", "/icons/favicon.svg", "/icons/apple-touch-icon.png"}
+               "/core/render2d.js", "/core/overlay.js", "/core/ui.js", "/core/settings.js", "/core/panel.js",
+               "/core/view.js", "/core/spiderPose.js", "/gl/glRenderer.js", "/gl/shaders.js", "/gl/sunlit.js",
+               "/gl/sunlitShaders.js", "/gl/canopy.js", "/gl/leafMesh.js", "/gl/spiders.js", "/gl/spiderShaders.js",
+               "/gl/spiderModels.js", "/manifest.webmanifest", "/icons/favicon.svg", "/icons/apple-touch-icon.png"}
+CLASSIC = "debug=1&nosw=1&look=classic"
+SUNLIT = "debug=1&nosw=1&look=sunlit"
 SWIFTSHADER_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 HARDWARE_FLAGS = ["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=d3d11"] if sys.platform == "win32" else ["--enable-gpu", "--ignore-gpu-blocklist"]
 SOFTWARE_WORDS = ("swiftshader", "software", "llvmpipe", "basic render driver")
@@ -239,7 +246,7 @@ def check_cold_load(h: Harness):
 
 
 def check_all_species(h: Harness):
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     try:
         rows = {}
         ok = True
@@ -268,7 +275,7 @@ def check_parity(h: Harness):
     snare = next((s["id"] for s in h.index["specimens"] if s["kind"] == "snare"), None)
     orb = next((s["id"] for s in h.index["specimens"] if s["kind"] == "orb" and s["id"] != h.default), None)
     chosen = [sid for sid in (h.default, orb, snare) if sid]
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     evidence, numbers, ok = [], {}, True
     try:
         for sid in chosen:
@@ -304,50 +311,55 @@ def check_parity(h: Harness):
 def check_zero_uploads(h: Harness):
     if not h.env.get("webgl2"):
         return None, {"reason": "WebGL2 unavailable"}, []
-    ctx, page, log = h.context()
-    try:
-        page.evaluate("window.__spun.setBackend('gl')")
-        h.plant(page, h.default)
-        page.wait_for_function("window.__spun.stats().instances === 1")
-        page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
-        samples = page.evaluate("""id => new Promise(resolve => {
-          const out = [];
-          const tick = () => {
-            const s = window.__spun.stats();
-            out.push([s.glBufferUploadsLastFrame, s.rafActive]);
-            if (out.length % 40 === 0) window.__spun.plant(id, 200 + out.length * 5, 357);
-            if (out.length < 120) requestAnimationFrame(tick); else resolve(out);
-          };
-          requestAnimationFrame(tick);
-        })""", h.default)
-        numbers = {"frames": len(samples), "maxUploadsPerFrame": max(s[0] for s in samples),
+    numbers, ok = {}, True
+    for look, query in (("classic", CLASSIC), ("sunlit", SUNLIT)):
+        ctx, page, log = h.context(query)
+        try:
+            page.evaluate("window.__spun.setBackend('gl')")
+            h.plant(page, h.default)
+            page.wait_for_function("window.__spun.stats().instances === 1")
+            page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            samples = page.evaluate("""id => new Promise(resolve => {
+              const out = [];
+              const tick = () => {
+                const s = window.__spun.stats();
+                out.push([s.glBufferUploadsLastFrame, s.rafActive]);
+                if (out.length % 40 === 0) window.__spun.plant(id, 200 + out.length * 5, 357);
+                if (out.length < 120) requestAnimationFrame(tick); else resolve(out);
+              };
+              requestAnimationFrame(tick);
+            })""", h.default)
+            row = {"look": h.stats(page)["look"], "frames": len(samples), "maxUploadsPerFrame": max(s[0] for s in samples),
                    "framesGrowing": sum(1 for s in samples if s[1]), "uploadsTotal": h.stats(page)["glBufferUploadsTotal"]}
-        return numbers["maxUploadsPerFrame"] == 0 and numbers["framesGrowing"] == 120 and not log["errors"], numbers, []
-    finally:
-        ctx.close()
-
+            ok &= row["look"] == look and row["maxUploadsPerFrame"] == 0 and row["framesGrowing"] == 120 and not log["errors"]
+            numbers[look] = row
+        finally:
+            ctx.close()
+    return ok, numbers, []
 
 def check_settle(h: Harness):
-    ctx, page, log = h.context()
-    try:
-        numbers = {}
-        ok = True
-        for backend in h.backends():
-            page.evaluate(f"window.__spun.clear(); window.__spun.setBackend('{backend}')")
+    """Classic always rests once webs finish; Sunlit rests too when the breeze is off."""
+    numbers, ok = {}, True
+    runs = [("classic", CLASSIC, backend) for backend in h.backends()]
+    if h.env.get("webgl2"):
+        runs.append(("sunlit", SUNLIT, "gl"))
+    for look, query, backend in runs:
+        ctx, page, log = h.context(query)
+        try:
+            page.evaluate(f"window.__spun.setBackend('{backend}'); window.__spun.settings.set('motion', 0)")
             h.plant(page, h.default)
             page.wait_for_function("window.__spun.stats().instances === 1 && window.__spun.stats().cursors[0].cursor >= "
-                                   f"{h.specs[h.default]['segments']}", timeout=120000)
+                                   f"{h.specs[h.default]['segments']}", timeout=240000)
             time.sleep(1.0)
             a = h.stats(page)
             time.sleep(0.5)
             b = h.stats(page)
-            good = not a["rafActive"] and not b["rafActive"] and a["framesRendered"] == b["framesRendered"]
-            ok &= good
-            numbers[backend] = {"rafActive": b["rafActive"], "framesAt1s": a["framesRendered"], "framesAt1_5s": b["framesRendered"]}
-        return ok and not log["errors"], numbers, []
-    finally:
-        ctx.close()
-
+            good = not a["rafActive"] and not b["rafActive"] and a["framesRendered"] == b["framesRendered"] and b["look"] == look
+            ok &= good and not log["errors"]
+            numbers[f"{look}:{backend}"] = {"rafActive": b["rafActive"], "framesAt1s": a["framesRendered"], "framesAt1_5s": b["framesRendered"]}
+        finally:
+            ctx.close()
+    return ok, numbers, []
 
 def pick_probe(record, others, scale, avoid, min_gap_px=4.0, avoid_px=30.0):
     """Point on `record` far from other drawn records and from `avoid` points (native coords)."""
@@ -390,7 +402,7 @@ def check_eating(h: Harness):
     if not argiope or not golden:
         return None, {"reason": "argiope or golden missing from index.json"}, []
     dpr = 3  # probe in device pixels so thin threads in dense real webs stay separable
-    ctx, page, log = h.context(device_scale_factor=dpr)
+    ctx, page, log = h.context(CLASSIC, device_scale_factor=dpr)
     try:
         page.evaluate("window.__spun.setGlow(false)")
         # Argiope: a dying AUX record visible mid-capture, gone at the end.
@@ -469,7 +481,7 @@ def check_eating(h: Harness):
 
 def check_dew(h: Harness):
     numbers, evidence, ok = {}, [], True
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     try:
         dew_species = max(h.specs, key=lambda sid: sum(1 for b in decode_silk(WEB / "specimens" / h.specs[sid]["file"])["beads"] if not b["flags"] & BEAD_GLUE))
         spec = h.specs[dew_species]
@@ -528,7 +540,7 @@ def check_dew(h: Harness):
 
 
 def check_cap_fit(h: Harness):
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     try:
         page.evaluate("id => Promise.all(Array.from({length: 13}, (_, i) => window.__spun.plant(id, 60 + i * 80, 100 + i * 40)))", h.default)
         live = h.stats(page)["instances"]
@@ -551,7 +563,7 @@ def check_cap_fit(h: Harness):
 
 
 def check_reduced_motion(h: Harness):
-    ctx, page, log = h.context(reduced_motion="reduce")
+    ctx, page, log = h.context(CLASSIC, reduced_motion="reduce")
     try:
         numbers, ok = {}, True
         for backend in h.backends():
@@ -580,12 +592,12 @@ def check_fallback(h: Harness):
         ctx.close()
     numbers = {"nogl": nogl}
     ok = nogl["backend"] == "2d" and nogl["glDisabled"] and not nogl["consoleErrors"]
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     try:
         persisted = {}
         for backend in h.backends():
             page.evaluate(f"window.__spun.setBackend('{backend}')")
-            h.open(page, "debug=1&nosw=1")
+            h.open(page, CLASSIC)
             persisted[backend] = h.stats(page)["backend"]
         numbers["persistedAfterReload"] = persisted
         ok &= all(k == v for k, v in persisted.items()) and not log["errors"]
@@ -597,30 +609,33 @@ def check_fallback(h: Harness):
 def check_context_loss(h: Harness):
     if not h.env.get("webgl2"):
         return None, {"reason": "WebGL2 unavailable"}, []
-    ctx, page, log = h.context()
-    try:
-        page.evaluate("window.__spun.setBackend('gl')")
-        h.plant(page, h.default)
-        page.wait_for_function("window.__spun.stats().instances === 1")
-        h.seek(page, "end"); h.settle(page)
-        before = shot(page)
-        page.evaluate("""() => new Promise(resolve => {
-          const gl = window.__spun.glContext();
-          const ext = gl.getExtension('WEBGL_lose_context');
-          gl.canvas.addEventListener('webglcontextlost', () => setTimeout(() => ext.restoreContext(), 50), { once: true });
-          gl.canvas.addEventListener('webglcontextrestored', () => setTimeout(resolve, 50), { once: true });
-          ext.loseContext();
-        })""")
-        h.settle(page)
-        after = shot(page)
-        evidence = []
-        save(before, "context-before.png", evidence)
-        save(after, "context-after.png", evidence)
-        diff = int(np.abs(before - after).max())
-        return diff == 0 and not log["errors"], {"maxPixelDiff": diff}, evidence
-    finally:
-        ctx.close()
-
+    numbers, evidence, ok = {}, [], True
+    for look, query in (("classic", CLASSIC), ("sunlit", SUNLIT)):
+        ctx, page, log = h.context(query)
+        try:
+            page.evaluate("window.__spun.setBackend('gl')")
+            h.plant(page, h.default)
+            page.wait_for_function("window.__spun.stats().instances === 1")
+            h.seek(page, "end"); h.settle(page)
+            before = shot(page)
+            page.evaluate("""() => new Promise(resolve => {
+              const gl = window.__spun.glContext();
+              const ext = gl.getExtension('WEBGL_lose_context');
+              gl.canvas.addEventListener('webglcontextlost', () => setTimeout(() => ext.restoreContext(), 50), { once: true });
+              gl.canvas.addEventListener('webglcontextrestored', () => setTimeout(resolve, 50), { once: true });
+              ext.loseContext();
+            })""")
+            h.settle(page)
+            after = shot(page)
+            suffix = "" if look == "classic" else "-sunlit"
+            save(before, f"context-before{suffix}.png", evidence)
+            save(after, f"context-after{suffix}.png", evidence)
+            diff = int(np.abs(before - after).max())
+            ok &= diff == 0 and h.stats(page)["look"] == look and not log["errors"]
+            numbers[look] = {"maxPixelDiff": diff}
+        finally:
+            ctx.close()
+    return ok, numbers, evidence
 
 def check_sw_install(h: Harness):
     ctx, page, log = h.context("debug=1")
@@ -723,7 +738,7 @@ def check_keyboard(h: Harness):
 
 
 def check_performance(h: Harness):
-    ctx, page, log = h.context()
+    ctx, page, log = h.context(CLASSIC)
     try:
         numbers = {"glRenderer": h.env.get("glRenderer"), "hardware": not h.env.get("softwareRenderer")}
         species = list(dict.fromkeys(sid for sid in (h.default, "golden-orb-weaver") if sid in h.specs))
@@ -750,6 +765,270 @@ def check_performance(h: Harness):
         return ok and not log["errors"], numbers, []
     finally:
         ctx.close()
+
+
+# ---------------------------------------------------------------- Sunlit checks
+
+OVERLAY_OPAQUE_JS = """() => { const c = document.querySelector('#overlay-canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; }"""
+
+
+def sunlit_or_skip(h: Harness):
+    return None if h.env.get("webgl2") else (None, {"reason": "WebGL2 unavailable"}, [])
+
+
+def check_sunlit_default(h: Harness):
+    skip = sunlit_or_skip(h)
+    if skip:
+        return skip
+    ctx, page, log = h.context("debug=1&nosw=1")
+    try:
+        page.evaluate("window.__spun.settings.set('motion', 0)")
+        h.settle(page)
+        evidence = []
+        empty = shot(page)
+        save(empty, "sunlit-empty.png", evidence)
+        h.plant(page, h.default)
+        page.wait_for_function("window.__spun.stats().instances === 1")
+        h.seek(page, "end"); h.settle(page)
+        s = h.stats(page)
+        save(shot(page), "sunlit-default.png", evidence)
+        numbers = {"look": s["look"], "quality": s["quality"], "sunlitAvailable": s["sunlitAvailable"], "canopyInstances": s["canopyInstances"],
+                   "emptyStageStdDev": round(float(empty.std()), 2), "spidersDrawn": s["spidersDrawnLastFrame"],
+                   "overlayOpaquePixels": page.evaluate(OVERLAY_OPAQUE_JS), "consoleErrors": log["errors"]}
+        ok = (s["look"] == "sunlit" and numbers["emptyStageStdDev"] > 8 and s["canopyInstances"] > 0 and numbers["spidersDrawn"] == 1
+              and numbers["overlayOpaquePixels"] == 0 and not log["errors"])
+        return ok, numbers, evidence
+    finally:
+        ctx.close()
+
+
+def check_sunlit_species(h: Harness):
+    """Every species plants, completes and draws its ray-marched spiders; Illustrated hands them back to the overlay."""
+    skip = sunlit_or_skip(h)
+    if skip:
+        return skip
+    ctx, page, log = h.context(SUNLIT)
+    try:
+        page.evaluate("window.__spun.settings.set('motion', 0)")
+        rows, ok, evidence = {}, True, []
+        for sid, spec in h.specs.items():
+            page.evaluate("window.__spun.clear()")
+            h.plant(page, sid)
+            page.wait_for_function("window.__spun.stats().instances === 1")
+            h.seek(page, "end"); h.settle(page)
+            s = h.stats(page)
+            good = s["cursors"][0]["cursor"] == spec["segments"] and s["spidersDrawnLastFrame"] == len(spec["spiders"])
+            ok &= good
+            rows[sid] = {"spiders": len(spec["spiders"]), "drawn": s["spidersDrawnLastFrame"], "ok": good}
+            if sid in ("christmas-jewel-spider", "redback-spider"):
+                pl = s["placements"][0]
+                rest = spec["spiders"][0]["rest"]
+                x = pl["anchorX"] + (rest["x"] - spec["anchor"]["x"]) * pl["scale"]
+                y = pl["anchorY"] + (rest["y"] - spec["anchor"]["y"]) * pl["scale"]
+                page.evaluate(f"window.__spun.zoomTo(8, {x}, {y})")
+                h.settle(page)
+                save(shot(page), f"sunlit-spider-{sid}.png", evidence)
+                page.evaluate("window.__spun.zoomTo(1, 0, 0)")
+        page.evaluate("window.__spun.settings.set('spiders.model', 'glyph')")
+        h.settle(page)
+        glyph = {"drawn": h.stats(page)["spidersDrawnLastFrame"], "overlayOpaquePixels": page.evaluate(OVERLAY_OPAQUE_JS)}
+        ok &= glyph["drawn"] == 0 and glyph["overlayOpaquePixels"] > 0 and not log["errors"]
+        return ok, {"species": rows, "illustrated": glyph, "consoleErrors": log["errors"]}, evidence
+    finally:
+        ctx.close()
+
+
+def check_sunlit_dew(h: Harness):
+    """Dawn dew in Sunlit: none while growing, then drawn; Dew forms Never/Always override the mode."""
+    skip = sunlit_or_skip(h)
+    if skip:
+        return skip
+    ctx, page, log = h.context(SUNLIT)
+    try:
+        sid = "golden-orb-weaver" if "golden-orb-weaver" in h.specs else h.default
+        page.evaluate("window.__spun.settings.set('motion', 0); window.__spun.setMode('dawn')")
+        h.plant(page, sid)
+        page.wait_for_function("window.__spun.stats().instances === 1")
+        h.seek(page, h.specs[sid]["durationSeconds"] * 0.5); h.settle(page)
+        growing = h.stats(page)["dewVisible"]
+        h.seek(page, "end"); h.settle(page)
+        dawn = shot(page)
+        after = h.stats(page)["dewVisible"]
+        evidence = []
+        save(dawn, "sunlit-dawn.png", evidence)
+        page.evaluate("window.__spun.settings.set('dew.when', 'never')")
+        h.seek(page, "end"); h.settle(page)
+        never = h.stats(page)["dewVisible"]
+        dry = shot(page)
+        page.evaluate("window.__spun.setMode('dusk'); window.__spun.settings.set('dew.when', 'always')")
+        h.seek(page, "end"); h.settle(page)
+        always = h.stats(page)["dewVisible"]
+        numbers = {"species": sid, "dewWhileGrowing": growing, "dewAfter": after, "dewNeverInDawn": never, "dewAlwaysInDusk": always,
+                   "meanPixelChangeFromDew": round(float(np.abs(dawn - dry).mean()), 3), "consoleErrors": log["errors"]}
+        ok = growing == 0 and after > 0 and never == 0 and always > 0 and numbers["meanPixelChangeFromDew"] > 0.2 and not log["errors"]
+        return ok, numbers, evidence
+    finally:
+        ctx.close()
+
+
+def check_ambient(h: Harness):
+    """With a breeze the Sunlit stage keeps animating; without one, or with reduced motion, it rests."""
+    skip = sunlit_or_skip(h)
+    if skip:
+        return skip
+    numbers, ok = {}, True
+    for label, options, motion in (("breeze", {}, 0.55), ("still", {}, 0), ("reducedMotion", {"reduced_motion": "reduce"}, 0.55)):
+        ctx, page, log = h.context(SUNLIT, **options)
+        try:
+            page.evaluate(f"window.__spun.settings.set('motion', {motion})")
+            page.evaluate("() => new Promise(r => setTimeout(r, 1500))")
+            a = h.stats(page)
+            page.evaluate("() => new Promise(r => setTimeout(r, 1000))")
+            b = h.stats(page)
+            row = {"rafActive": b["rafActive"], "sceneTimeAdvanced": round(b["sceneTime"] - a["sceneTime"], 3),
+                   "framesAdvanced": b["framesRendered"] - a["framesRendered"]}
+            numbers[label] = row
+            if label == "breeze":
+                ok &= b["rafActive"] and row["sceneTimeAdvanced"] > 0 and row["framesAdvanced"] > 0
+            else:
+                ok &= not b["rafActive"] and row["framesAdvanced"] == 0
+            ok &= not log["errors"]
+        finally:
+            ctx.close()
+    return ok, numbers, []
+
+
+SETTINGS_JS = "window.__spun.settings.values"
+
+
+def check_settings(h: Harness):
+    """Scene settings persist across reloads, presets and resets apply, and share links round-trip."""
+    ctx, page, log = h.context(SUNLIT)
+    try:
+        page.evaluate("""() => { const s = window.__spun.settings;
+          s.set('silk.brightness', 2.25); s.set('light.dusk.sunX', 0.3); s.set('dew.when', 'always'); s.set('foliage.leafColor', '#aa3311'); }""")
+        page.wait_for_timeout(400)
+        h.open(page, "debug=1&nosw=1")
+        kept = page.evaluate(SETTINGS_JS)
+        persisted = (kept["silk"]["brightness"] == 2.25 and kept["light"]["dusk"]["sunX"] == 0.3 and kept["dew"]["when"] == "always"
+                     and kept["foliage"]["leafColor"] == "#aa3311" and kept["light"]["dusk"]["preset"] == "custom")
+        share = page.evaluate("window.__spun.settings.shareString()")
+        page.evaluate("() => { window.__spun.settings.applyPreset('dawn', 'noon'); }")
+        noon = page.evaluate(SETTINGS_JS + ".light.dawn")
+        preset_ok = noon["preset"] == "noon" and noon["sunY"] == -0.42 and noon["haze"] == 0.3
+        page.evaluate("window.__spun.settings.set('silk.brightness', 99)")
+        clamped = page.evaluate(SETTINGS_JS + ".silk.brightness")
+        page.evaluate("window.__spun.settings.resetAll()")
+        reset = page.evaluate(SETTINGS_JS)
+        reset_ok = reset["silk"]["brightness"] == 1 and reset["light"]["dusk"]["sunX"] == 0.78 and reset["dew"]["when"] == "dawn"
+        page.evaluate("() => localStorage.setItem('spun-scene', '{not json')")
+        h.open(page, "debug=1&nosw=1")
+        corrupt = page.evaluate(SETTINGS_JS + ".silk.brightness")
+    finally:
+        ctx.close()
+    ctx, page, log2 = h.context(f"debug=1&nosw=1#scene={share}")
+    try:
+        shared = page.evaluate(SETTINGS_JS)
+        shared_ok = shared["silk"]["brightness"] == 2.25 and shared["light"]["dusk"]["sunX"] == 0.3 and "scene=" not in page.url
+    finally:
+        ctx.close()
+    numbers = {"persisted": persisted, "presetApplied": preset_ok, "clampedBrightness": clamped, "resetAll": reset_ok,
+               "corruptStorageBrightness": corrupt, "shareLinkRoundTrip": shared_ok, "shareLength": len(share),
+               "consoleErrors": log["errors"] + log2["errors"]}
+    ok = persisted and preset_ok and clamped == 3 and reset_ok and corrupt == 1 and shared_ok and not numbers["consoleErrors"]
+    return ok, numbers, []
+
+
+def check_panel(h: Harness):
+    """The Scene panel opens from the header, labels every control, takes Escape without clearing the stage."""
+    ctx, page, log = h.context(SUNLIT)
+    try:
+        page.evaluate("window.__spun.settings.set('motion', 0)")
+        h.plant(page, h.default)
+        page.wait_for_function("window.__spun.stats().instances === 1")
+        page.click("#scene-button")
+        opened = page.evaluate("""() => ({ hidden: document.querySelector('#scene-panel').hidden,
+          expanded: document.querySelector('#scene-button').getAttribute('aria-expanded'),
+          focus: document.activeElement.className })""")
+        labels = page.evaluate("""() => {
+          const panel = document.querySelector('#scene-panel');
+          const unlabeled = [];
+          for (const input of panel.querySelectorAll('input, select')) {
+            const named = (input.id && panel.querySelector(`label[for="${input.id}"]`)) || input.getAttribute('aria-labelledby') || input.getAttribute('aria-label');
+            if (!named) unlabeled.push(input.id || input.type);
+          }
+          return { controls: panel.querySelectorAll('input, select').length, groups: panel.querySelectorAll('details').length, unlabeled };
+        }""")
+        before = page.evaluate(SETTINGS_JS + ".silk.brightness")
+        page.evaluate("document.querySelector('[data-group=silk]').open = true")
+        page.focus("#ctl-silk-brightness")
+        page.keyboard.press("ArrowRight")
+        after = page.evaluate(SETTINGS_JS + ".silk.brightness")
+        page.keyboard.press("Escape")
+        closed = page.evaluate("""() => ({ hidden: document.querySelector('#scene-panel').hidden,
+          expanded: document.querySelector('#scene-button').getAttribute('aria-expanded'), focus: document.activeElement.id,
+          instances: window.__spun.stats().instances })""")
+        evidence = []
+        page.click("#scene-button")
+        page.wait_for_timeout(300)
+        page.screenshot(path=str(OUT / "panel-1280.png")); evidence.append("panel-1280.png")
+        numbers = {"opened": opened, "labels": labels, "sliderKeyboard": [before, after], "afterEscape": closed, "consoleErrors": log["errors"]}
+        ok = (not opened["hidden"] and opened["expanded"] == "true" and "panel-title" in opened["focus"] and labels["controls"] >= 40
+              and not labels["unlabeled"] and after > before and closed["hidden"] and closed["expanded"] == "false"
+              and closed["focus"] == "scene-button" and closed["instances"] == 1 and not log["errors"])
+        return ok, numbers, evidence
+    finally:
+        ctx.close()
+
+
+def check_zoom(h: Harness):
+    """Sunlit zoom: the wheel magnifies, a click while zoomed plants under the pointer, a drag pans, 0 resets."""
+    skip = sunlit_or_skip(h)
+    if skip:
+        return skip
+    ctx, page, log = h.context(SUNLIT)
+    try:
+        page.evaluate("window.__spun.settings.set('motion', 0)")
+        box = page.locator("#stage").bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        page.mouse.move(cx, cy)
+        for _ in range(4):
+            page.mouse.wheel(0, -240)
+        h.settle(page)
+        zoom = h.stats(page)["zoom"]
+        # A click at a point while zoomed plants at the matching stage point.
+        px, py = box["x"] + box["width"] * 0.7, box["y"] + box["height"] * 0.4
+        view = h.stats(page)["view"]
+        page.mouse.move(px, py); page.mouse.down(); page.mouse.up()
+        page.wait_for_function("window.__spun.stats().instances === 1")
+        local = page.evaluate(f"(() => {{ const r = document.querySelector('#stage').getBoundingClientRect(); return [({px} - r.left), ({py} - r.top)]; }})()")
+        # The stage point under the pointer: (screen - offset) / zoom.
+        expected = [(local[0] - view["tx"]) / view["zoom"], (local[1] - view["ty"]) / view["zoom"]]
+        anchor = h.stats(page)["placements"][0]
+        tx_ty = [anchor["anchorX"], anchor["anchorY"]]
+        page.mouse.move(cx, cy); page.mouse.down(); page.mouse.move(cx - 120, cy - 60, steps=6); page.mouse.up()
+        panned_instances = h.stats(page)["instances"]
+        page.keyboard.press("0")
+        h.settle(page)
+        reset = h.stats(page)["zoom"]
+        numbers = {"zoomAfterWheel": round(zoom, 3), "plantedAnchor": [round(v, 1) for v in tx_ty], "expectedStagePoint": [round(v, 1) for v in expected],
+                   "instancesAfterDrag": panned_instances, "zoomAfterReset": reset, "consoleErrors": log["errors"]}
+        ok = (zoom > 1.5 and panned_instances == 1 and reset == 1 and abs(tx_ty[0] - expected[0]) < 0.5 and abs(tx_ty[1] - expected[1]) < 0.5
+              and not log["errors"])
+    finally:
+        ctx.close()
+    ctx, page, log = h.context(CLASSIC)
+    try:
+        page.mouse.move(cx, cy)
+        page.mouse.wheel(0, -480)
+        page.wait_for_timeout(200)
+        classic_zoom = h.stats(page)["zoom"]
+    finally:
+        ctx.close()
+    numbers["classicZoomAfterWheel"] = classic_zoom
+    ok &= classic_zoom == 1
+    return ok, numbers, []
 
 
 CONTRAST_JS = """() => {
@@ -798,7 +1077,9 @@ def check_accessibility(h: Harness):
           return { label: g.getAttribute('aria-label'), radios: radios.length, tabZero: radios.filter(r => r.tabIndex === 0).length };
         })""")
         roving = {}
-        for gid in ("species-rows", "mode-group", "backend-group"):
+        for gid in ("species-rows", "mode-group", "backend-group", "look-group"):
+            if gid in ("backend-group", "look-group") and page.evaluate("document.querySelector('#scene-panel').hidden"):
+                page.click("#scene-button")
             page.focus(f"#{gid} [role=radio][tabindex='0']")
             page.keyboard.press("End")
             end = page.evaluate("document.activeElement.textContent.trim()")
@@ -853,6 +1134,13 @@ def check_accessibility(h: Harness):
 
 CHECKS = [
     ("cold-load", "Cold load", check_cold_load),
+    ("sunlit-default", "Sunlit is the default look", check_sunlit_default),
+    ("sunlit-species", "Sunlit: all species and 3-D spiders", check_sunlit_species),
+    ("sunlit-dew", "Sunlit: dew", check_sunlit_dew),
+    ("ambient", "Breeze animation and rest", check_ambient),
+    ("settings", "Scene settings persist and share", check_settings),
+    ("panel", "Scene panel", check_panel),
+    ("zoom", "Sunlit zoom", check_zoom),
     ("all-species", "All species, both backends", check_all_species),
     ("parity", "2D/GL parity", check_parity),
     ("zero-uploads", "Zero uploads while growing", check_zero_uploads),

@@ -11,7 +11,7 @@ export const LIGHT_PRESETS = Object.freeze({
   golden: {
     label: "Golden hour",
     light: { sunX: 0.78, sunY: 0.12, backlight: 0.86, intensity: 1.1, sunColor: "#ffc27e", sunSize: 1.2 },
-    air: { skyTop: "#2c3d5c", skyHorizon: "#d9a06a", hazeColor: "#ffd0a0", haze: 0.55, rays: 1.1, rayLength: 0.7, ambient: 0.32, motes: 0.55 },
+    air: { skyTop: "#2c3d5c", skyHorizon: "#e89a78", hazeColor: "#ffc0a0", haze: 0.38, rays: 1.1, rayLength: 0.7, ambient: 0.42, motes: 0.55 },
   },
   dawn: {
     label: "Misty dawn",
@@ -25,13 +25,13 @@ export const LIGHT_PRESETS = Object.freeze({
   },
   blue: {
     label: "Blue hour",
-    light: { sunX: 0.08, sunY: 0.14, backlight: 0.9, intensity: 0.4, sunColor: "#ff9a7c", sunSize: 2.2 },
-    air: { skyTop: "#141c36", skyHorizon: "#5b4a6e", hazeColor: "#8c86b4", haze: 0.5, rays: 0.55, rayLength: 0.6, ambient: 0.5, motes: 0.2 },
+    light: { sunX: 0.08, sunY: 0.14, backlight: 0.9, intensity: 0.32, sunColor: "#ffab8a", sunSize: 2.2 },
+    air: { skyTop: "#18223f", skyHorizon: "#4a5780", hazeColor: "#8d97c4", haze: 0.5, rays: 0.55, rayLength: 0.6, ambient: 0.55, motes: 0.2 },
   },
   moon: {
     label: "Moonlight",
-    light: { sunX: 0.72, sunY: -0.08, backlight: 0.85, intensity: 0.28, sunColor: "#bdd0ff", sunSize: 0.8 },
-    air: { skyTop: "#03050b", skyHorizon: "#0e1628", hazeColor: "#5d6f96", haze: 0.3, rays: 0.6, rayLength: 0.6, ambient: 0.22, motes: 0.1 },
+    light: { sunX: 0.72, sunY: -0.08, backlight: 0.85, intensity: 0.14, sunColor: "#b4c6f0", sunSize: 0.8 },
+    air: { skyTop: "#080b14", skyHorizon: "#1b2436", hazeColor: "#5e6c88", haze: 0.4, rays: 0.9, rayLength: 0.6, ambient: 0.55, motes: 0.1 },
   },
 });
 
@@ -48,11 +48,11 @@ export const DEFAULTS = Object.freeze({
   quality: "auto",
   motion: 0.55,
   light: { dusk: modeDefaults("dusk"), dawn: modeDefaults("dawn") },
-  foliage: { density: 0.55, leafSize: 1, leafColor: "#6f8a4a", foreground: 0.6, blur: 0.65, bokeh: 0.7, bokehSize: 1, blades: 6, seed: 1 },
+  foliage: { density: 0.55, leafSize: 1, leafColor: "#5b8a4e", foreground: 0.6, blur: 0.65, bokeh: 0.7, bokehSize: 1, blades: 6, seed: 1 },
   silk: { brightness: 1, iridescence: 0.7, sheen: 0.45, thickness: 1, sparkle: 0.6 },
   dew: { when: "dawn", amount: 1, size: 1, refraction: 0.85, glint: 1, star: 6, speed: 1 },
   spiders: { model: "3d", size: 1, hair: 0.6, gloss: 0.6 },
-  camera: { exposure: 0, contrast: 1.12, saturation: 1.1, warmth: 0, bloom: 0.8, vignette: 0.45, grain: 0.25, aberration: 0.25, flare: 0.35 },
+  camera: { exposure: 0, contrast: 1.2, saturation: 1.1, warmth: 0, tone: 0.4, bloom: 0.8, vignette: 0.45, grain: 0.25, aberration: 0.25, flare: 0.35 },
 });
 
 // Panel schema. perMode groups live under light[mode]; root groups at the top level. Controls marked
@@ -128,6 +128,7 @@ export const GROUPS = [
       { key: "contrast", type: "range", label: "Contrast", min: 0.5, max: 1.6, step: 0.01, format: "times" },
       { key: "saturation", type: "range", label: "Saturation", min: 0, max: 2, step: 0.01, format: "times" },
       { key: "warmth", type: "range", label: "Warmth", min: -1, max: 1, step: 0.01, format: "signed" },
+      { key: "tone", type: "range", label: "Split tone", min: 0, max: 1, step: 0.01, format: "percent", hint: "Cools the shadows and warms the highlights" },
       { key: "bloom", type: "range", label: "Bloom", min: 0, max: 2, step: 0.01, format: "times" },
       { key: "flare", type: "range", label: "Lens flare", min: 0, max: 1, step: 0.01, format: "percent" },
       { key: "aberration", type: "range", label: "Chromatic fringe", min: 0, max: 1, step: 0.01, format: "percent" },
@@ -230,6 +231,8 @@ export class SceneSettings {
     this.listeners = new Set();
     this.values = normalize(this.readStored());
     this.saveTimer = 0;
+    // A debounced save still pending when the page goes away is written at once.
+    if (storage) window.addEventListener("pagehide", () => this.flush());
   }
 
   readStored() {
@@ -245,9 +248,14 @@ export class SceneSettings {
   save() {
     if (!this.storage) return;
     window.clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values)); } catch { /* storage unavailable */ }
-    }, 150);
+    this.saveTimer = window.setTimeout(() => this.flush(), 150);
+  }
+
+  flush() {
+    if (!this.saveTimer) return;
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values)); } catch { /* storage unavailable */ }
   }
 
   subscribe(listener) {

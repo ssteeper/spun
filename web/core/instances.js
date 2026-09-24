@@ -328,8 +328,8 @@ export class InstanceManager {
     if (this.lastTimestamp == null) this.lastTimestamp = timestamp;
     const delta = this.frozen ? 0 : Math.max(0, (timestamp - this.lastTimestamp) / 1000);
     this.lastTimestamp = timestamp;
-    if (delta > 0) this.adaptQuality(delta);
     if (delta > 0) {
+      this.adaptQuality(delta);
       for (const instance of this.instances) {
         instance.elapsed = Math.min(this.endTime(instance), instance.elapsed + delta);
       }
@@ -434,6 +434,7 @@ export class InstanceManager {
       sceneTime: this.sceneTime,
       ambient: this.ambientActive(),
       zoom: this.view.zoom,
+      view: { zoom: this.view.zoom, tx: this.view.tx, ty: this.view.ty },
       spidersDrawnLastFrame: sunlit && this.effectiveLook() === "sunlit" ? sunlit.stats.spidersDrawn : 0,
       canopyInstances: sunlit?.stats.canopyInstances ?? 0,
       instances: this.instances.length,

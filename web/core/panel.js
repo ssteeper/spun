@@ -67,7 +67,7 @@ export class ScenePanel {
     this.toggle = toggle;
     this.settings = settings;
     this.getMode = getMode;
-    this.backend = backend; // { available(), current(), set(value) }
+    this.backend = backend; // { glAvailable(), sunlitAvailable(), current(), set(value) }
     this.bindings = [];
     this.build();
     toggle.addEventListener("click", () => this.setOpen(!this.isOpen()));
@@ -300,15 +300,18 @@ export class ScenePanel {
   refresh() {
     const mode = this.getMode();
     const values = this.settings.values;
-    const sunlitPossible = this.backend.current() === "gl" && this.backend.available();
+    const onGl = this.backend.current() === "gl";
+    const sunlitPossible = onGl && this.backend.sunlitAvailable();
     const sunlit = values.look === "sunlit" && sunlitPossible;
     this.panel.classList.toggle("is-classic", !sunlit);
     this.look.mark(sunlit ? "sunlit" : "classic");
     const sunlitButton = this.look.buttons.find(button => button.dataset.value === "sunlit");
     sunlitButton.disabled = !sunlitPossible;
-    this.lookNote.textContent = sunlitPossible
-      ? (sunlit ? "Ray-marched sunlight, dew and 3-D spiders." : "The original line-drawn plates.")
-      : "Sunlit needs the WebGL2 renderer; Classic is shown.";
+    let note = sunlit ? "Ray-marched sunlight, dew and 3-D spiders." : "The original line-drawn plates.";
+    if (!this.backend.glAvailable()) note = "Sunlit needs WebGL2, which this browser lacks; Classic is shown.";
+    else if (!onGl) note = "Sunlit draws with the WebGL2 renderer (below); Canvas 2D shows Classic.";
+    else if (!sunlitPossible) note = "Sunlit needs floating-point render targets, which this GPU lacks; Classic is shown.";
+    this.lookNote.textContent = note;
     this.modeNote.textContent = `Light for ${MODE_LABEL[mode]} · switch mode in the header`;
     this.presetLabel.textContent = `${MODE_LABEL[mode]} light`;
     const active = values.light[mode].preset;

@@ -2,7 +2,16 @@
 
 ## Thesis
 
-A spider web is not a shape. It is the fossil of a behaviour. A painted web shows the result; this project shows the spider building it. Nine Australian spiders run their species' construction programs thread by thread on a plan graph: bridge, frame, radii, hub, temporary spiral, sticky spiral, decoration, or a snare. Each itinerary is frozen into a compact binary `.silk` record list, which a zero-dependency browser viewer (Canvas2D or WebGL2) replays. She rides the tip of the thread she spins, eats the temporary spiral as the sticky spiral goes in, and settles; then everything stops. In Dawn, dew condenses on the capture silk at the Rayleigh–Plateau spacing.
+A spider web is not a shape. It is the fossil of a behaviour. A painted web shows the result; this project shows the spider building it. Nine Australian spiders run their species' construction programs thread by thread on a plan graph: bridge, frame, radii, hub, temporary spiral, sticky spiral, decoration, or a snare. Each itinerary is frozen into a compact binary `.silk` record list, which a zero-dependency browser viewer (Canvas2D or WebGL2) replays. She rides the tip of the thread she spins, eats the temporary spiral as the sticky spiral goes in, and settles; then the web stops. In Dawn, dew condenses on the capture silk at the Rayleigh–Plateau spacing.
+
+The viewer draws those records in two looks:
+
+- **Sunlit**, the default on WebGL2, renders them as a backlit macro photograph: sunlight ray-marched through a eucalypt canopy, rainbow-fringed silk, dew drops that refract the scene, and ray-marched 3-D spiders. A Scene panel adjusts every part of it.
+- **Classic** is the original line drawing. It is identical in Canvas2D and WebGL2 and in the Python plates.
+
+![Golden hour: a St Andrew's Cross web backlit through the canopy, in the Sunlit look](renders/sunlit/golden-hour.jpg)
+
+The nine specimens in the Classic look, at dusk:
 
 ![The nine specimens at dusk](renders/catalogue_dusk.png)
 
@@ -23,6 +32,154 @@ This table is the verbatim output of `.venv/Scripts/python.exe tools/build.py --
 | Net-casting Spider | *Deinopis subrufa* | snare | `deinopis.silk` | Small held rectangle of woolly cribellate silk | net | 2,681 | 400 | 1.6 | 56,852 |
 | Magnificent Spider | *Ordgarius magnificus* | snare | `ordgarius.silk` | Single bolas globule below the trapeze and spindle egg sacs | hanging | 953 | 143 | 0.7 | 20,236 |
 | Redback Spider | *Latrodectus hasselti* | snare | `latrodectus.silk` | Timber retreat, dense tangle and glued gumfoot bottoms | retreat | 1,976 | 499 | 6.0 | 43,544 |
+
+## The Sunlit look
+
+On WebGL2 the viewer opens in the **Sunlit** look. It draws the same frozen records as a backlit macro photograph:
+
+- The web hangs in front of a defocused eucalypt canopy.
+- Low sun streams through the leaves in visible shafts and dapples the silk.
+- Threads flare in rainbow-fringed highlights.
+- Dew beads act as tiny lenses.
+- The spiders are ray-marched 3-D models.
+
+**Classic** is the line-drawn look documented above. It stays one click away in the Scene panel, it is the only look on Canvas 2D, and the 2D/GL parity checks still compare it.
+
+| | |
+|---|---|
+| ![Misty dawn over a golden orb web](renders/sunlit/misty-dawn.jpg) | ![Dew beads on capture silk at 9x zoom](renders/sunlit/dew-closeup.jpg) |
+| ![The nine ray-marched spiders](renders/sunlit/spiders.jpg) | ![The five light presets on a garden orb web](renders/sunlit/light-presets.jpg) |
+
+### Controls
+
+- **Scene** (header) opens the settings panel: a side drawer on wide screens, a bottom sheet on phones. Escape closes it; a second Escape clears the stage.
+- **Dusk / Dawn** keeps its meaning: dew condenses on finished webs in Dawn. Each mode remembers its own light, and the presets (Golden hour, Misty dawn, Forest noon, Blue hour, Moonlight) apply to the current mode.
+- **Zoom**, Sunlit only:
+  - The wheel or a pinch zooms toward the pointer, up to 12x.
+  - While zoomed, a drag pans and a click without a drag plants under the pointer.
+  - `+`, `-` and `0` (fit) work from the keyboard, as do the buttons at the stage's lower right.
+  - The web, dew and spiders magnify. The defocused backdrop stays put, which reads as depth.
+- Every setting persists in `localStorage["spun-scene"]`. **Copy share link** encodes the settings that differ from the defaults as `#scene=<base64url JSON>`, and opening such a link applies them.
+
+### What can be changed
+
+| Group | Settings |
+|---|---|
+| Sunlight (per mode) | sun position (a drag pad plus two sliders; the sun may sit off the stage), backlight, brightness, softness (sun size), sun colour |
+| Air & sky (per mode) | light-shaft strength and length, mist, sky fill, floating motes, upper-sky, lower-sky and mist colours |
+| Leaves & lens | canopy density, leaf size and colour, foreground leaves, depth of field, bokeh strength and size, aperture blades (round, 5–8), a new canopy seed |
+| Silk | brightness, iridescence, sheen width, thickness, glue sparkle |
+| Dew | when it forms (at dawn / always / never), amount, droplet size, refraction, glints, star points (none, 4, 6, 8), condensing speed |
+| Spiders | model (3-D ray-marched or the illustrated glyphs), size, hairiness, gloss |
+| Camera | exposure, contrast, saturation, warmth, split tone, bloom, lens flare, chromatic fringe, vignette, film grain |
+| Rendering | look (Sunlit / Classic), quality (automatic, low, medium, high, ultra), breeze, renderer (WebGL2 / Canvas 2D) |
+
+"Dew forms" and "Condensing speed" also apply to Classic.
+
+### How it is drawn
+
+`web/gl/sunlit.js` runs a half-float HDR pipeline around the unchanged record VBOs. It needs `EXT_color_buffer_float`; without it, and on Canvas 2D, the viewer draws Classic.
+
+**Coordinates.**
+- The world frame is x right and y down in stage pixels, with z toward the viewer.
+- The camera eye sits 1.374 stage heights in front of the stage centre, a vertical field of view of about 40°.
+- The background works in *h-space*: stage pixels from the top centre, divided by the stage height.
+- The sun is placed as a screen position `sunX`, `sunY`. Its direction is the ray from the eye through that point, with z scaled by $2\,\text{backlight}-1$: at 1 the sun faces the camera through the web, at 0.5 it grazes the web plane, and below 0.5 it lights the web from the front.
+
+**1. Canopy** (`canopy.js`, drawn into a mipmapped target that covers the stage plus 0.45 h of margin).
+- A seeded generator (mulberry32) grows 3–14 branches from the top and upper sides. They carry alternate pendulous leaves and drooping tip clusters.
+- It adds 18–60 dense clusters just above and beside the stage for the sun to shine through, and 10–36 clusters of distant leaves.
+- Each leaf is an instanced lanceolate signed distance: half-width $2.62\,W s^{0.55}(1-s)^{0.9}$ along $s \in [0,1]$, with a falcate centreline and a petiole.
+- Its edge softness *is* its depth-of-field blur, $\text{mix}(b_{min}, b_{max}, \text{depth})$, so the backdrop needs no blur passes.
+- A distant bush is two fbm layers.
+- Wind bends branches with a smooth travelling field (both ends of every segment move, so they stay joined) and flutters leaves about their petioles, all in the vertex shader.
+
+**2. Backdrop.**
+- A sky gradient falls to shaded undergrowth.
+- Around the sun sits a three-term aureole and a disc of 36× sun radiance.
+- The canopy composites over it, premultiplied.
+- Bokeh are instanced aperture polygons, visible where the canopy's coverage at mip 3 leaves a gap and brighter near the sun.
+
+**3. Light.**
+- For each pixel $p$ at a quarter or half of CSS resolution, the shader marches $N$ steps (28 at low, 64 at high, 96 at ultra) toward the sun $s$ through the canopy's transmission $T = 1 - 0.97\,\alpha$:
+  $$\text{shafts}(p) = \frac{\sum_i w_i\,T\big(p + \hat d\,L\,t_i\big)}{\sum_i w_i},\quad t_i = \frac{i+\xi}{N},\ w_i = 1 - 0.55\,t_i$$
+  Here $\hat d$ points at the sun, $L = \min(|s-p|, 0.25 + 1.6\,\text{shaft length})$, and $\xi$ is interleaved-gradient-noise jitter.
+- The same pass cone-traces the sun's visibility on the web plane, which dapples the silk. It samples the canopy $D = 0.42$ h toward the sun at mip $\log_2(0.04\,\text{softness}\cdot D/\text{texel})$, so a larger sun gives softer dapples.
+- A 9-tap separable blur hides the jitter.
+- In the composite, the scene is dimmed by $1 - 0.12\,\text{mist}$ and the in-scattered light is added:
+  $$\text{airlight}\cdot\big(0.12\,\text{shafts} + b^2\big)\cdot\big(0.12 + 0.9\,\text{HG}(\theta;0.72) + 0.25\,\text{HG}(\theta;0.25)\big)\cdot\text{mist}\cdot\text{shafts strength}\cdot 0.7$$
+  Here $b = \text{smoothstep}(0.1, 0.55, \text{shafts})$ turns the marched fraction into a beam mask, so beams stand out where the march found open air between shaded stretches. $\text{HG}$ is the Henyey–Greenstein phase function normalised to 1 at $\theta = 0$, and $\theta$ is the angle between the view ray and the sun.
+
+**4. Silk** (`SILK_FS`, the `.silk` record VBO as instanced capsules).
+- A thread of tangent $T$ scatters sunlight into the cone where $T\cdot S + T\cdot V = 0$, with $V$ taken per pixel from the eye. That is why a backlit orb shows bright bands through the hub that move as the sun moves.
+- The longitudinal lobe is evaluated per RGB channel with a wavelength shift $\delta = (-1, 0, 1)\cdot 0.95\,\beta\cdot\text{iridescence}$, plus a weaker second-order lobe at $2.7\,\delta$. The overlap is white and the fringes are spectral:
+  $$M_c = e^{-\frac12\left(\frac{T\cdot S + T\cdot V + \delta_c}{\beta}\right)^2},\quad \text{radiance} = \text{base}\cdot\text{fill}\cdot0.3 + \text{sun}\cdot\text{vis}\cdot\text{brightness}\left(0.1\,\text{base} + M\,(R + TT)\,\frac{0.32}{\beta}\,\text{tint}\right)$$
+- The lobe width is $\beta = \text{mix}(0.035, 0.32, \text{sheen})$. Reflection is $R = \tfrac14\sqrt{\tfrac12 + \tfrac12\cos\varphi}$ and forward transmission is $TT = 2.4\left(\tfrac{1-\cos\varphi}{2}\right)^5$, with $\varphi$ the angle about the fibre.
+- Stabilimentum, tufts, retreat and cribellate wool scatter more diffusely.
+- Capture silk adds glue-droplet glints every 3.4 native px. They average to a constant once droplets are under about 2 device px apart.
+- Silk width grows only as $\text{zoom}^{0.3}$: real threads stay hair-fine under a macro lens.
+
+**5. Bark and leaves.**
+- `SCAFFOLD` records at alpha 1 are shaded as cylinders, with bark grain and a backlit rim. In this look they are drawn 1.7× thicker.
+- `leafMesh.js` refills closed outlines as triangle fans with leaf-local coordinates for veins: scaffold-leaf margins (alpha 0.9), the leaf-curler's hauled leaf (a closed `LEAF` outline at alpha 0.95, shaded dry), and the `EGGSAC` outlines (woolly silk that glows when backlit).
+- Each fill fades in over 24 records after its outline closes.
+
+**6. Dew and glue** (`DEW_FS`).
+- Each bead is a sphere impostor.
+- The shader traces the view ray through both surfaces with Snell's law, using $\eta = 1.329, 1.333, 1.339$ for red, green and blue. The exit ray samples the backdrop at mip 1.5, 0.3 canvas heights behind, so each drop holds a small, inverted, dispersed image of the scene. Refraction blends toward a straight view.
+- On top of that:
+  - a Schlick reflection of the sky ($F_0 = 0.02$);
+  - the sun's specular glint $400\,(R\cdot S)^{900}$;
+  - the sun seen through the lens, $60\,(d\cdot S)^{180}$;
+  - total internal reflection darkening the rim.
+- Glue and the bolas lure use the same optics with an amber tint.
+- Dew timing is the Classic clock, scaled by Condensing speed. A second per-bead hash thins it by Amount.
+
+**7. Spiders** (`spiders.js`, `spiderShaders.js`, `spiderModels.js`). Each spider is one screen quad, and a fragment shader sphere-traces a signed-distance model along orthographic rays in the glyph's own millimetre frame (spinnerets at the origin, head toward +x, back toward the viewer).
+- **Body.**
+  - Abdomen and carapace are the glyph's ellipses, given depth.
+  - The head is raised, with eight eyes: the araneid square of medians with lateral pairs, the theridiid double row, or Deinopis's two huge posterior medians.
+  - Chelicerae, palps, pedicel and spinnerets complete the body.
+- **Species features and patterns.**
+  - Features: garden-orb shoulder humps, the jewel spider's six spines, the scorpion-tail, the Magnificent spider's tubercles, sigilla dimples.
+  - Patterns are procedural and coloured from the glyph's fills: golden bands, Argiope stripes, a garden-orb folium, jewel spots, redback stripe, and so on.
+- **Legs.**
+  - The four glyph joints (base, knee, ankle, tip) become seven points: coxa, femur, patella, tibia, metatarsus, tarsus.
+  - Knees rise to $z_0 + \max(0.12L,\ 0.42\,|\text{femur}|)$, ankles sit at about half that height, and tarsi touch the web.
+  - Swing legs lift their tips on the same alternating-tetrapod phase as the glyph gait.
+  - Segments are tapered round cones, raked spines are added once a tibia spans more than 2.2 device px, and each leg has its own bounding sphere for early rejection.
+- **Pose.** It comes from the same itinerary as the glyphs (`core/spiderPose.js`): she walks with the gait, eases into her rest pose, and the leaf-curler hides her body and inner legs at rest.
+- **Anti-aliasing.** Closest-approach coverage, with shading at the closest point.
+- **Lighting.** The scene sun, dappled by the same visibility map; 24-step soft shadows (high and ultra); 5-tap occlusion; a soft bounce key from the upper front; sky reflections on glossy cuticle; translucency from interior signed-distance depth, weaker on the dark, hard-bodied redback and jewel spider and filtered by leg pigment, so dark legs stay dark against the sun while pale joints and bands glow; and a hair sheen.
+- **Size and dew.** The net-casting and Magnificent spiders keep 1× size, because their legs hold silk. Dew is not drawn on spiders.
+
+**8. Finish.**
+- Foreground leaves are drawn into a quarter-resolution target, heavily defocused.
+- Bloom runs over 4–7 levels (13-tap downsample with a soft threshold of 1.0, tent upsample).
+- The star filter is a quarter-resolution bright pass, streaked in three Kawase passes per axis. It uses 2–4 axes and a threshold of 7, so only the brightest glints get stars.
+- Analytic sun glare adds aperture diffraction spikes (N spikes for even blade counts, 2N for odd), scaled by how open the canopy is around the sun.
+- Then lens ghosts, chromatic fringe, exposure, white balance and ACES filmic tone mapping (Narkowicz fit).
+- The grade follows:
+  - Split tone multiplies shadows toward teal and highlights toward amber, then restores each pixel's luminance.
+  - Saturation.
+  - Contrast is a power curve about mid-grey, $0.18\,(c/0.18)^{k}$, so it never clips dark channels. A linear pivot at 0.5 would crush every channel below 0.05 to black and strip the blue from the shade.
+  - Vignette, grain and dither, and finally sRGB.
+
+**Budgets and invariants.**
+- While webs grow, the Sunlit look still uploads no buffers. Canopy, bokeh and mote instances upload once per seed and density; leaf meshes once per specimen; spider poses and the zoom travel as uniforms.
+- Render targets are reallocated only on resize or a quality change.
+- The loop runs while webs grow, dew condenses or a zoom eases, and continuously while the breeze is above 0. With the breeze at 0 (or under `prefers-reduced-motion`) the stage rests exactly as Classic does.
+- Seeking freezes the scene clock and the jitter, so a frozen frame is deterministic, and it survives WebGL context loss pixel for pixel.
+
+| Quality | canopy (× CSS px) | light | steps | bloom levels | stars | spider steps | spider shadows | motes |
+|---|---:|---:|---:|---:|:---:|---:|:---:|---:|
+| low | 0.22 | 0.25 | 28 | 4 | no | 56 | no | 160 |
+| medium | 0.30 | 0.33 | 44 | 5 | yes | 72 | no | 260 |
+| high | 0.40 | 0.50 | 64 | 6 | yes | 96 | yes | 340 |
+| ultra | 0.55 | 0.50 | 96 | 7 | yes | 128 | yes | 420 |
+
+- **Automatic quality** starts at low on software rasterisers (SwiftShader, llvmpipe), at medium on coarse-pointer handhelds, and at high otherwise.
+- It steps down one level when the median frame over two seconds exceeds 24 ms.
 
 ## Algorithms
 
@@ -209,7 +366,7 @@ The birth index is `gl_InstanceID`.
 
 ## Rendering architecture
 
-Three renderers draw the same frozen records with the same visibility rules:
+Four renderers draw the same frozen records with the same visibility rules:
 
 - Records $i < \lfloor c\rfloor$ are complete; record $\lfloor c\rfloor$ is drawn to fraction $c-\lfloor c\rfloor$.
 - Once $c \ge$ death, alpha fades over `min(fadeRecords, N − death)` records.
@@ -224,12 +381,17 @@ The renderers:
   - Glow uses a sharp FBO and half-resolution ping-pong FBOs with a separable Gaussian matched to the Canvas2D σ.
   - On context loss it calls `preventDefault()` and restores from the kept ArrayBuffers.
   - `?nogl=1` or a missing WebGL2 falls back to Canvas2D.
-- **Overlay** (`web/core/overlay.js`): a transparent 2D canvas above either backend draws the spiders from the glyph data. She fades in, walks with the gait, then eases into her rest pose and stops.
+- **Sunlit** (`web/gl/sunlit.js` and its modules, described under The Sunlit look): the WebGL2 backend's default look. It shades the same record and bead VBOs with its own programs inside an HDR pipeline, and draws the spiders itself as ray-marched models.
+- **Overlay** (`web/core/overlay.js`): a transparent 2D canvas above either backend draws the spiders from the glyph data. She fades in, walks with the gait, then eases into her rest pose and stops. Her pose comes from `web/core/spiderPose.js`, shared with the 3-D spiders. In Sunlit the overlay stands aside unless the Illustrated spider model is chosen, and it follows the zoom.
 - **Python plates** (`tools/render.py`): a third renderer. It draws at 4× supersampling with Lanczos downsampling, the same hairline rule, radius-14 glow at 0.5 (×1.2 in Dawn), beads and the rest glyph.
 
-The rAF loop runs only while something grows, settles, condenses or fades. `web/sw.js` precaches the shell, `index.json` and the default specimen. `.silk` files are cache-first, `index.json` is stale-while-revalidate, and navigations fall back to `offline.html`. The cache version is a content hash written by `tools/build.py`. `?debug=1` exposes `window.__spun` (`plant`, `seek`, `resume`, `setBackend`, `setMode`, `setGlow`, `clear`, `stats`). Implementation choices are under Decisions → Viewer and Appearance and build.
+The rAF loop runs only while something grows, settles, condenses, fades or zooms, or while the Sunlit breeze is above 0. `web/sw.js` precaches the shell, `index.json` and the default specimen. `.silk` files are cache-first, `index.json` is stale-while-revalidate, and navigations fall back to `offline.html`. The cache version is a content hash written by `tools/build.py`. `?look=classic|sunlit` selects a look. `?debug=1` exposes `window.__spun`:
+- `plant`, `seek`, `resume`, `setBackend`, `setMode`, `setGlow`, `clear` and `stats`;
+- the `settings` store, and `setSceneTime`, `setDebugView` and `zoomTo` for deterministic Sunlit frames. Implementation choices are under Decisions → Viewer and Appearance and build.
 
 ## Verification status
+
+Everything under Verified was run on the current code, in a Linux container with no GPU, unless it is marked as an earlier run.
 
 ### Verified
 
@@ -260,31 +422,82 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
   - catalogue (nine `.silk` files plus `index.json`): 1,987,957 B (≤ 3 MiB);
   - `index.json` (110,337 B) plus the default `argiope.silk` (237,872 B): 348,209 B (≤ 400 KiB);
   - golden sits exactly at the 32,000-bead cap after deterministic thinning.
-- **Plates:** `tools/render.py` wrote dusk and dawn plates for all nine species plus both catalogue plates in `renders/`. Each plate was opened and critiqued; see Plate notes.
-- **Video:** ffmpeg is present on the build machine. `renders/video/ordgarius.mp4` and `.gif` were produced by `render.py --video magnificent-spider` (git-ignored).
-- **Browser checks** (`tools/verify_web.py`, report in [web/verification/README.md](web/verification/README.md)): all 17 PASS.
-  - **Environment:** headless Chromium 153.0.8010.12 via Playwright, with flags `--enable-gpu --ignore-gpu-blocklist --use-angle=d3d11`. Renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)", a hardware GPU with WebGL2.
-  - **Cold load:** 0 console errors and 0 failed requests. Only the shell, `index.json` (110,343 B) and `argiope.silk` (237,872 B) were fetched (budget 409,600 B).
-  - **All nine species** plant and complete in both 2D and GL; decoded segment and bead counts equal `index.json`.
-  - **Parity** (stroke-pixel MAD, 2D vs GL, 1280×800, DPR 1; glow off/on, limits 12/14): default (argiope) 4.221/3.196 at 40% and 3.1/2.757 at the end; golden 5.039/3.886 at 40% and 3.023/3.619 at the end; net-casting 2.347/2.704 at 40% and 5.29/6.04 at the end.
-  - **Zero uploads:** `glBufferUploadsLastFrame` stayed 0 across 120 frames of growth.
-  - **Settle-and-stop:** in both backends `rafActive` is false and `framesRendered` stays constant from 1 s to 1.5 s after completion.
-  - **Eating:** argiope's probed temporary record is visible mid-capture (pixel delta 89 in 2D, 87 in GL) and gone at the end (0). Golden's temporary silk is still present at the end (delta 99 / 97).
-  - **Dew and glue:** golden in Dawn shows 0 dew while growing and all 32,000 beads once complete. Glue is visible in Dusk on redback and magnificent, in both backends.
+- **Plates** (earlier run): `tools/render.py` wrote dusk and dawn plates for all nine species plus both catalogue plates in `renders/`. Each plate was opened and critiqued; see Plate notes.
+- **Video** (earlier run, on a machine with ffmpeg): `renders/video/ordgarius.mp4` and `.gif` were produced by `render.py --video magnificent-spider` (git-ignored).
+- **Sunlit images:** `tools/showcase.py` rendered the five images in `renders/sunlit/` from the live viewer, at 1440×900 and DPR 1.5, on the software renderer described below. Each was opened and reviewed. The review led to three fixes:
+  - Contrast now pivots about mid-grey. The old linear pivot clipped the blue out of every shadow, which turned golden hour olive.
+  - Golden hour now uses a rosier mist, and moonlight a greyer sky.
+  - Backlit legs now show their own pigment instead of the abdomen's tissue colour.
+- **Browser checks** (`tools/verify_web.py`, report and screenshots in [web/verification/README.md](web/verification/README.md)): all 24 PASS.
+  - **Environment:**
+    - Headless Chromium 141.0.7390.37 via Playwright, with no launch flags.
+    - There is no GPU, so WebGL2 runs on SwiftShader: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)".
+    - Frame times from this renderer say nothing about GPUs.
+  - **Cold load:**
+    - 0 console errors and 0 failed requests.
+    - Only the shell modules, `index.json` (110,337 B) and `argiope.silk` (237,872 B) were fetched (data budget 409,600 B).
+  - **Sunlit is the default look** on WebGL2:
+    - Automatic quality chose low on the software renderer.
+    - The canopy has 3,386 instances, and the empty stage has a pixel standard deviation of 66.3 (a lit backdrop, not a flat fill).
+    - One 3-D spider is drawn, and the glyph overlay stays empty (0 opaque pixels).
+  - **Sunlit species:**
+    - All nine plant and complete, and each draws its spiders as 3-D models (3 on the jewel-spider colony).
+    - With the Illustrated model, no models are drawn and the glyphs return to the overlay.
+  - **Sunlit dew:**
+    - Golden in Dawn has 0 dew beads while growing and 32,000 once complete.
+    - "Never" keeps Dawn dry (0); "always" gives Dusk all 32,000.
+  - **Breeze:** at the default breeze the loop runs and the scene clock advances (0.6 s over the probe). At 0, and under reduced motion, the loop stops and the clock holds.
+  - **Scene settings:**
+    - A change survives reload and presets apply.
+    - Out-of-range brightness clamps to 3.
+    - Reset all restores the defaults, and corrupt storage falls back to them.
+    - A share link (179 characters) round-trips.
+  - **Scene panel:**
+    - It opens with focus on its title, with 48 controls in 8 groups and none unlabelled.
+    - Arrow keys step a slider.
+    - Escape closes it, returns focus to the Scene button and leaves the stage as it was.
+  - **Sunlit zoom:**
+    - The wheel zooms to 4.6×.
+    - A click while zoomed plants at exactly the stage point under the pointer (695.1, 341.6).
+    - A drag pans without planting, and the reset returns to 1×.
+    - Classic ignores the wheel.
+  - **All nine species, both backends** (Classic): decoded segment and bead counts equal `index.json`.
+  - **Parity** (Classic, stroke-pixel MAD, 2D vs GL, 1280×800, DPR 1; glow off/on, limits 12/14):
+    - default (argiope): 6.559/4.747 at 40% and 6.975/6.09 at the end;
+    - golden: 6.652/4.931 at 40% and 7.134/8.472 at the end;
+    - net-casting: 3.383/3.516 at 40% and 6.646/7.203 at the end.
+  - **Zero uploads:** `glBufferUploadsLastFrame` stayed 0 across 120 frames of growth in Classic and 0 across 120 in Sunlit.
+  - **Settle-and-stop:** in Classic 2D, Classic GL, and Sunlit with the breeze at 0, `rafActive` is false and `framesRendered` stays constant from 1 s to 1.5 s after completion.
+  - **Eating:**
+    - Argiope's probed temporary record is visible mid-capture (pixel delta 90 in 2D, 87 in GL) and gone at the end (0).
+    - Golden's temporary silk is still present at the end (delta 103 / 93).
+  - **Dew and glue:**
+    - Golden in Dawn shows 0 dew while growing and all 32,000 beads once complete.
+    - Glue is visible in Dusk on redback and magnificent, in both backends.
   - **Cap and fit:** planting 13 webs leaves 12. Webs planted at the four corners sit exactly at the 4 px inset.
   - **Reduced motion:** a new web is complete on the next frame (cursor 7,196 = N) in both backends.
   - **Fallback:** `?nogl=1` runs on 2D with no errors, and the backend choice persists across reload.
-  - **Context loss:** the screenshot after restore matches the one before (max pixel difference 0).
-  - **Offline:** the service worker activates with 18 precached entries. After one online visit, an offline reload plants argiope and golden.
-  - **Mobile:** at 390×844 the document is 390 px wide and the chip strip scrolls (0 → 367 px).
+  - **Context loss:** the screenshot after restore matches the one before, with a maximum pixel difference of 0 in Classic and 0 in Sunlit.
+  - **Offline:** the service worker activates with 29 precached entries. After one online visit, an offline reload plants argiope and golden.
+  - **Mobile:** at 390×844 the document is 390 px wide and the chip strip scrolls (0 → 434 px).
   - **Keyboard:** Tab reaches the chips, arrows switch species, Enter plants on the stage, and Esc clears.
-  - **Accessibility:** 24 text elements, minimum contrast 6.7:1. Three radiogroups use roving tabindex with Home/End. Focus rings are visible, the live region is polite, and the canvas has `tabindex=0` and a label.
-  - **Performance:** with 12 growing webs (default and golden), 2D and GL both measured a 16.67 ms mean frame time (p95 ≤ 16.8 ms) on the RTX 5070 Ti. That is the 60 Hz vsync cap; headroom above 60 fps was not measured.
+  - **Accessibility:**
+    - 24 text elements, with a minimum contrast of 6.7:1.
+    - 6 radiogroups (spider species, lighting mode, look, dew forms, model, renderer) use roving tabindex, with Home/End.
+    - Focus rings are visible, the live region is polite, and the canvas has `tabindex=0` and a label.
+  - **Performance** (Classic, 12 growing webs):
+    - 2D mean frame times are 22.15 ms (default) and 20.55 ms (golden).
+    - GL on SwiftShader takes 1,056 and 1,910 ms. These are software-rasterizer numbers, so no frame-rate claim is made.
+- **Earlier hardware run** (commit 3ae2a6d, before the Sunlit look):
+  - The 17 Classic checks passed on headless Chromium 153 with ANGLE D3D11 on an NVIDIA GeForce RTX 5070 Ti.
+  - There, 12 growing webs held the 60 Hz vsync cap in both backends (16.67 ms mean, p95 ≤ 16.8 ms).
 
 ### Not verified
 
+- Sunlit on a hardware GPU: its frame times, the quality level Automatic settles on, and how its images look on real GPUs. Every Sunlit check and image here came from SwiftShader.
+- Classic on a hardware GPU since the Sunlit work began. The earlier run predates it. Classic's drawing code is unchanged, but the frame loop it shares with Sunlit is not.
 - Safari and Firefox: only Chromium ran.
-- Real mobile devices and touch hardware: 390×844 was emulated.
+- Real mobile devices and touch hardware: 390×844 was emulated, and pinch zoom was not exercised.
 - A real offline or sleep–wake cycle: offline was emulated with Playwright's `context.set_offline`, and context loss was forced through `WEBGL_lose_context`.
 - Frame-time headroom above the 60 Hz vsync.
 - Screen-reader output: only ARIA structure and roles were checked.
@@ -314,6 +527,11 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 - Every scaffold composition: branches, leaves, twiglets, the redback's timber and leaf litter.
 - Frame kinks from relaxation, and relaxation stiffnesses.
 - Glow, colour palette and the Dawn gradient.
+- Everything specific to the Sunlit look:
+  - **Scene and light.** The canopy, bokeh and motes are procedural stand-ins, not a surveyed habitat. The light shafts and dapples come from a 2.5-D model: one canopy layer, shadow rays marched in screen space, and a fixed canopy distance.
+  - **Silk optics.** The fibre-scattering lobe positions are physically motivated (the specular cone of a cylinder), but lobe widths, the spectral shift that stands in for thin-fibre diffraction, and glue-droplet glints are tuned by eye. So are bark shading and the filled leaves and egg sacs.
+  - **Dew optics.** The two-surface refraction and the Fresnel reflection are real; the backdrop distance, glint exponents and the star filter are photographic choices.
+  - **Spider models.** Body depths, leg lift, eye layouts, spines, surface patterns, translucency and all lighting constants were modelled by eye from each glyph and from photographs of the genera, not from measured specimens.
 
 ## Decisions
 
@@ -354,10 +572,25 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 - WebGL2: the record VBO is the `.silk` record bytes uploaded once per specimen; glue beads use one resolved VBO per specimen. While webs grow only uniforms change. Sharp silk is drawn into a full-resolution FBO, then box-downsampled to half resolution. The Canvas2D blur σ (radius·0.5·dpr half-res px) is matched by n ≥ 2 passes per axis of a 13-sample bilinear-paired Gaussian with σ/√n, where n = max(2, ⌈(2.4σ/12)²⌉) keeps every pass within ±12 texels at 2.4σ. The backend defaults to GL when WebGL2 exists and persists in `localStorage["spun-backend"]`.
 - Placement: the specimen anchor stays under the pointer; each side's overshoot of the 4 px stage inset shrinks the web independently, down to a floor of 0.12 × the ideal scale. Only when the floor still cannot fit is the anchor shifted by the minimum per-axis amount needed for the inset. Detail = scale / ideal scale drives the LOD threshold.
 - Compositing order (2D, GL and Python plates alike): background → sharp silk (source-over, chronological) → glow added with `lighter` at the glow strength (×1.2 in Dawn). The 2D canvas paints the background itself each frame; each instance's half-resolution glow buffer is padded by ⌈3σ⌉ on every side so the halo is not clipped.
-- Dawn: dew (non-GLUE beads) shows only in Dawn and only on completed webs. Each web's dew clock starts at the later of its completion and the moment Dawn was switched on, on the virtual clock (so `seek` works). Bead i starts at 2.4 s·u_i (u_i = hash32(i)/2³²) and grows over 0.35 s with an ease-out cubic. A web keeps ticking until 2.75 s after its origin, then stops. Canvas2D bakes fully grown dew into a per-instance dew layer and draws growing dew in the dynamic layer. GL keeps u_i in the bead VBO and tests dew visibility per instance from uniforms. Switching to Dusk clears dew; dew is hidden when detail < 0.35. Glow strength ×1.2 applies stage-wide in Dawn.
+- Dawn: by default ("Dew forms: at dawn") dew (non-GLUE beads) shows only in Dawn and only on completed webs; "always" and "never" override the mode, and "Condensing speed" scales the dew clock. Each web's dew clock starts at the later of its completion and the moment Dawn was switched on, on the virtual clock (so `seek` works). Bead i starts at 2.4 s·u_i (u_i = hash32(i)/2³²) and grows over 0.35 s with an ease-out cubic. A web keeps ticking until 2.75 s after its origin, then stops. Canvas2D bakes fully grown dew into a per-instance dew layer and draws growing dew in the dynamic layer. GL keeps u_i in the bead VBO and tests dew visibility per instance from uniforms. Switching to Dusk clears dew; dew is hidden when detail < 0.35. Glow strength ×1.2 applies stage-wide in Dawn.
 - Offline: `sw.js` cache names embed `VERSION`, and old `spun-*` caches are deleted on activate. Install precaches the shell (HTML, CSS, every JS module, the manifest, `offline.html`, favicon and Apple touch icon), `index.json` and the default specimen's `.silk`. `.silk` is cache-first and filled on demand; `index.json` is stale-while-revalidate. Navigations are network-first; offline they fall back to the cached `index.html`, or to `offline.html` when `index.json` is not cached. `?nosw=1` skips registration and unregisters existing workers.
 - Hairlines: device width w_px = max(w·s, 0.55)·dpr; the stroke diameter is max(w_px, 1) device px and alpha is multiplied by min(w_px, 1).
 - `temporary` holds exactly the records with a death index; never-dying auxiliary silk joins the append-only permanent layer.
+- **Sunlit and Classic.**
+  - Sunlit is chosen, not forced: it needs the WebGL2 backend and `EXT_color_buffer_float`, and the look falls back to Classic on Canvas 2D or without float targets.
+  - The Classic GL path is untouched, so 2D/GL parity is still measured on it.
+  - The header's former 2D/GL toggle moved into the Scene panel (Rendering → Renderer, still `#backend-group` and still persisted). The Scene button takes its place, so the header keeps four control groups.
+- **Per-mode light.** Dusk and Dawn each keep a light profile (sun and air), and the rest of the settings are shared. That way the header toggle keeps its meaning (dew), while each mode can have its own sky.
+- **Breeze and rest.** The breeze animates the canopy, bokeh, motes, shaft jitter and grain; the web itself never sways. At breeze 0, or with `prefers-reduced-motion`, the Sunlit stage rests like Classic.
+- **Zoom.**
+  - It is a Sunlit view transform: stage = (screen − offset) / zoom.
+  - Placement stays in stage coordinates, and planting while zoomed maps the pointer through the inverse.
+  - The light map is sampled at un-zoomed positions, so dapples and highlights stay on the silk.
+  - The backdrop does not zoom.
+  - Silk width scales with zoom^0.3; bark, dew and spiders scale fully.
+- **Filled shapes.** They are found from record topology, not from new metadata, so `.silk` and `index.json` did not change for Sunlit. A chain closes as soon as a record ends where it began, because egg-sac hatching can continue from the closing node.
+- **Spider size.** The net-casting and Magnificent spiders ignore the Size slider: their legs hold silk (the net's corners and the bolas line), and scaling them would break the contact.
+- **Saving settings.** They save on a 150 ms debounce and flush on `pagehide`, so a change made just before navigating away is kept.
 
 ## Plate notes
 
@@ -384,10 +617,11 @@ The rAF loop runs only while something grows, settles, condenses or fades. `web/
 ## Roadmap
 
 Kept out on purpose by the non-goals, and possible later:
-- Wind or sway, and prey capture.
+- The web swaying in the breeze (only light and leaves move now), and prey capture.
 - Web damage and repair.
-- Per-plant randomization and user parameters or sliders.
-- Export or share buttons, kiosk or autoplay.
+- Per-plant randomization of the webs themselves (the scene is fully adjustable; each species' web is fixed).
+- Image or video export, kiosk or autoplay. Settings can already be shared as a link.
+- Sunlit rendering in the Python plates, which stay Classic.
 - Audio.
 - WebXR, 3-D or mesh export, WebGPU.
 - More species (e.g. *Cyrtophora* tent webs, *Poltys*).
@@ -413,4 +647,9 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe tools/render.py --video st-andrews-cross   # needs ffmpeg; exits 2 without it
 .venv/Scripts/python.exe tools/serve.py [--port 8000]      # http://127.0.0.1:8000/
 .venv/Scripts/python.exe tools/verify_web.py               # headless checks → web/verification/
+.venv/Scripts/python.exe tools/showcase.py [--only hero|dawn|presets|spiders]   # renders/sunlit/*.jpg from the live viewer
 ```
+
+In the viewer:
+- Pick a species, then click the stage to plant it. Escape clears the stage, after first closing the Scene panel if it is open.
+- In Sunlit, the wheel or a pinch zooms, a drag pans while zoomed, and `+`, `-` and `0` (fit) work from the keyboard.

@@ -1,17 +1,13 @@
 {
   "environment": {
     "channel": "chromium (playwright)",
-    "mode": "hardware GPU",
-    "browserVersion": "153.0.8010.12",
-    "launchFlags": [
-      "--enable-gpu",
-      "--ignore-gpu-blocklist",
-      "--use-angle=d3d11"
-    ],
-    "glRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "mode": "default (software)",
+    "browserVersion": "141.0.7390.37",
+    "launchFlags": [],
+    "glRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
     "webgl2": true,
     "headless": true,
-    "softwareRenderer": false
+    "softwareRenderer": true
   },
   "checks": [
     {
@@ -27,20 +23,221 @@
           "/app.js",
           "/core/instances.js",
           "/core/overlay.js",
+          "/core/panel.js",
           "/core/render2d.js",
+          "/core/settings.js",
+          "/core/spiderPose.js",
           "/core/stage.js",
           "/core/ui.js",
+          "/core/view.js",
+          "/gl/canopy.js",
           "/gl/glRenderer.js",
+          "/gl/leafMesh.js",
           "/gl/shaders.js",
+          "/gl/spiderModels.js",
+          "/gl/spiderShaders.js",
+          "/gl/spiders.js",
+          "/gl/sunlit.js",
+          "/gl/sunlitShaders.js",
           "/silk.js",
           "/specimens/argiope.silk",
           "/specimens/index.json",
           "/style.css"
         ],
         "unexpected": [],
-        "indexBytes": 110343,
+        "indexBytes": 110337,
         "defaultSilkBytes": 237872,
         "budgetBytes": 409600
+      },
+      "evidence": []
+    },
+    {
+      "id": "sunlit-default",
+      "title": "Sunlit is the default look",
+      "status": "PASS",
+      "numbers": {
+        "look": "sunlit",
+        "quality": "low",
+        "sunlitAvailable": true,
+        "canopyInstances": 3386,
+        "emptyStageStdDev": 66.3,
+        "spidersDrawn": 1,
+        "overlayOpaquePixels": 0,
+        "consoleErrors": []
+      },
+      "evidence": [
+        "sunlit-empty.png",
+        "sunlit-default.png"
+      ]
+    },
+    {
+      "id": "sunlit-species",
+      "title": "Sunlit: all species and 3-D spiders",
+      "status": "PASS",
+      "numbers": {
+        "species": {
+          "golden-orb-weaver": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "st-andrews-cross": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "garden-orb-weaver": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "leaf-curling-spider": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "christmas-jewel-spider": {
+            "spiders": 3,
+            "drawn": 3,
+            "ok": true
+          },
+          "scorpion-tailed-spider": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "net-casting-spider": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "magnificent-spider": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          },
+          "redback-spider": {
+            "spiders": 1,
+            "drawn": 1,
+            "ok": true
+          }
+        },
+        "illustrated": {
+          "drawn": 0,
+          "overlayOpaquePixels": 571
+        },
+        "consoleErrors": []
+      },
+      "evidence": [
+        "sunlit-spider-christmas-jewel-spider.png",
+        "sunlit-spider-redback-spider.png"
+      ]
+    },
+    {
+      "id": "sunlit-dew",
+      "title": "Sunlit: dew",
+      "status": "PASS",
+      "numbers": {
+        "species": "golden-orb-weaver",
+        "dewWhileGrowing": 0,
+        "dewAfter": 32000,
+        "dewNeverInDawn": 0,
+        "dewAlwaysInDusk": 32000,
+        "meanPixelChangeFromDew": 1.083,
+        "consoleErrors": []
+      },
+      "evidence": [
+        "sunlit-dawn.png"
+      ]
+    },
+    {
+      "id": "ambient",
+      "title": "Breeze animation and rest",
+      "status": "PASS",
+      "numbers": {
+        "breeze": {
+          "rafActive": true,
+          "sceneTimeAdvanced": 0.6,
+          "framesAdvanced": 6
+        },
+        "still": {
+          "rafActive": false,
+          "sceneTimeAdvanced": 0.0,
+          "framesAdvanced": 0
+        },
+        "reducedMotion": {
+          "rafActive": false,
+          "sceneTimeAdvanced": 0,
+          "framesAdvanced": 0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "settings",
+      "title": "Scene settings persist and share",
+      "status": "PASS",
+      "numbers": {
+        "persisted": true,
+        "presetApplied": true,
+        "clampedBrightness": 3,
+        "resetAll": true,
+        "corruptStorageBrightness": 1,
+        "shareLinkRoundTrip": true,
+        "shareLength": 179,
+        "consoleErrors": []
+      },
+      "evidence": []
+    },
+    {
+      "id": "panel",
+      "title": "Scene panel",
+      "status": "PASS",
+      "numbers": {
+        "opened": {
+          "hidden": false,
+          "expanded": "true",
+          "focus": "panel-title"
+        },
+        "labels": {
+          "controls": 48,
+          "groups": 8,
+          "unlabeled": []
+        },
+        "sliderKeyboard": [
+          1,
+          1.01
+        ],
+        "afterEscape": {
+          "hidden": true,
+          "expanded": "false",
+          "focus": "scene-button",
+          "instances": 1
+        },
+        "consoleErrors": []
+      },
+      "evidence": [
+        "panel-1280.png"
+      ]
+    },
+    {
+      "id": "zoom",
+      "title": "Sunlit zoom",
+      "status": "PASS",
+      "numbers": {
+        "zoomAfterWheel": 4.646,
+        "plantedAnchor": [
+          695.1,
+          341.6
+        ],
+        "expectedStagePoint": [
+          695.1,
+          341.6
+        ],
+        "instancesAfterDrag": 1,
+        "zoomAfterReset": 1,
+        "consoleErrors": [],
+        "classicZoomAfterWheel": 1
       },
       "evidence": []
     },
@@ -92,10 +289,10 @@
           },
           "2d:scorpion-tailed-spider": {
             "decoded": {
-              "segments": 6295,
-              "beads": 7266
+              "segments": 6430,
+              "beads": 7491
             },
-            "cursor": 6295,
+            "cursor": 6430,
             "ok": true
           },
           "2d:net-casting-spider": {
@@ -164,10 +361,10 @@
           },
           "gl:scorpion-tailed-spider": {
             "decoded": {
-              "segments": 6295,
-              "beads": 7266
+              "segments": 6430,
+              "beads": 7491
             },
-            "cursor": 6295,
+            "cursor": 6430,
             "ok": true
           },
           "gl:net-casting-spider": {
@@ -209,63 +406,63 @@
       "status": "PASS",
       "numbers": {
         "st-andrews-cross:40pct:glowOff": {
-          "mad": 4.221,
-          "pixels": 23823,
+          "mad": 6.559,
+          "pixels": 23772,
           "limit": 12
         },
         "st-andrews-cross:40pct:glowOn": {
-          "mad": 3.196,
-          "pixels": 42123,
+          "mad": 4.747,
+          "pixels": 42426,
           "limit": 14
         },
         "st-andrews-cross:end:glowOff": {
-          "mad": 3.1,
-          "pixels": 40350,
+          "mad": 6.975,
+          "pixels": 40307,
           "limit": 12
         },
         "st-andrews-cross:end:glowOn": {
-          "mad": 2.757,
-          "pixels": 64053,
+          "mad": 6.09,
+          "pixels": 64057,
           "limit": 14
         },
         "golden-orb-weaver:40pct:glowOff": {
-          "mad": 5.039,
-          "pixels": 36078,
+          "mad": 6.652,
+          "pixels": 35973,
           "limit": 12
         },
         "golden-orb-weaver:40pct:glowOn": {
-          "mad": 3.886,
-          "pixels": 67903,
+          "mad": 4.931,
+          "pixels": 68208,
           "limit": 14
         },
         "golden-orb-weaver:end:glowOff": {
-          "mad": 3.023,
-          "pixels": 72403,
+          "mad": 7.134,
+          "pixels": 72400,
           "limit": 12
         },
         "golden-orb-weaver:end:glowOn": {
-          "mad": 3.619,
-          "pixels": 86547,
+          "mad": 8.472,
+          "pixels": 86565,
           "limit": 14
         },
         "net-casting-spider:40pct:glowOff": {
-          "mad": 2.347,
-          "pixels": 10073,
+          "mad": 3.383,
+          "pixels": 9883,
           "limit": 12
         },
         "net-casting-spider:40pct:glowOn": {
-          "mad": 2.704,
-          "pixels": 11536,
+          "mad": 3.516,
+          "pixels": 11453,
           "limit": 14
         },
         "net-casting-spider:end:glowOff": {
-          "mad": 5.29,
-          "pixels": 11301,
+          "mad": 6.646,
+          "pixels": 11185,
           "limit": 12
         },
         "net-casting-spider:end:glowOn": {
-          "mad": 6.04,
-          "pixels": 13939,
+          "mad": 7.203,
+          "pixels": 13871,
           "limit": 14
         },
         "consoleErrors": []
@@ -280,10 +477,20 @@
       "title": "Zero uploads while growing",
       "status": "PASS",
       "numbers": {
-        "frames": 120,
-        "maxUploadsPerFrame": 0,
-        "framesGrowing": 120,
-        "uploadsTotal": 5
+        "classic": {
+          "look": "classic",
+          "frames": 120,
+          "maxUploadsPerFrame": 0,
+          "framesGrowing": 120,
+          "uploadsTotal": 5
+        },
+        "sunlit": {
+          "look": "sunlit",
+          "frames": 120,
+          "maxUploadsPerFrame": 0,
+          "framesGrowing": 120,
+          "uploadsTotal": 21
+        }
       },
       "evidence": []
     },
@@ -292,15 +499,20 @@
       "title": "Settle-and-stop",
       "status": "PASS",
       "numbers": {
-        "2d": {
+        "classic:2d": {
           "rafActive": false,
-          "framesAt1s": 1832,
-          "framesAt1_5s": 1832
+          "framesAt1s": 1834,
+          "framesAt1_5s": 1834
         },
-        "gl": {
+        "classic:gl": {
           "rafActive": false,
-          "framesAt1s": 3666,
-          "framesAt1_5s": 3666
+          "framesAt1s": 128,
+          "framesAt1_5s": 128
+        },
+        "sunlit:gl": {
+          "rafActive": false,
+          "framesAt1s": 59,
+          "framesAt1_5s": 59
         }
       },
       "evidence": []
@@ -321,7 +533,7 @@
           ],
           "clearanceDevicePx": 4.57,
           "dpr": 3,
-          "deltaMid": 89,
+          "deltaMid": 90,
           "deltaEnd": 0
         },
         "argiope:gl": {
@@ -346,7 +558,7 @@
           ],
           "clearanceDevicePx": 3.1,
           "dpr": 3,
-          "deltaEnd": 99
+          "deltaEnd": 103
         },
         "golden:gl": {
           "record": 12112,
@@ -356,7 +568,7 @@
           ],
           "clearanceDevicePx": 3.1,
           "dpr": 3,
-          "deltaEnd": 97
+          "deltaEnd": 93
         }
       },
       "evidence": [
@@ -372,16 +584,16 @@
       "numbers": {
         "dawn:2d": {
           "species": "golden-orb-weaver",
-          "framesGrowing": 2510,
+          "framesGrowing": 2490,
           "maxDewWhileGrowing": 0,
-          "framesAfterCompletion": 63,
+          "framesAfterCompletion": 77,
           "finalDew": 32000
         },
         "dawn:gl": {
           "species": "golden-orb-weaver",
-          "framesGrowing": 2509,
+          "framesGrowing": 116,
           "maxDewWhileGrowing": 0,
-          "framesAfterCompletion": 166,
+          "framesAfterCompletion": 4,
           "finalDew": 32000
         },
         "glue:redback-spider:2d": {
@@ -391,7 +603,7 @@
             1038.0,
             701.9
           ],
-          "delta": 167
+          "delta": 121
         },
         "glue:redback-spider:gl": {
           "bead": 498,
@@ -400,7 +612,7 @@
             1038.0,
             701.9
           ],
-          "delta": 164
+          "delta": 163
         },
         "glue:magnificent-spider:2d": {
           "bead": 142,
@@ -483,11 +695,18 @@
       "title": "Context loss",
       "status": "PASS",
       "numbers": {
-        "maxPixelDiff": 0
+        "classic": {
+          "maxPixelDiff": 0
+        },
+        "sunlit": {
+          "maxPixelDiff": 0
+        }
       },
       "evidence": [
         "context-before.png",
-        "context-after.png"
+        "context-after.png",
+        "context-before-sunlit.png",
+        "context-after-sunlit.png"
       ]
     },
     {
@@ -496,7 +715,7 @@
       "status": "PASS",
       "numbers": {
         "state": "activated",
-        "precachedEntries": 18,
+        "precachedEntries": 29,
         "missing": [],
         "httpErrors": [],
         "consoleErrors": []
@@ -526,9 +745,9 @@
         "documentWidth": 390,
         "viewport": 390,
         "stripClient": 366,
-        "stripScroll": 733,
+        "stripScroll": 800,
         "before": 0,
-        "after": 367
+        "after": 434
       },
       "evidence": [
         "mobile-390.png"
@@ -574,6 +793,21 @@
             "tabZero": 1
           },
           {
+            "label": "Look",
+            "radios": 2,
+            "tabZero": 1
+          },
+          {
+            "label": "Dew forms",
+            "radios": 3,
+            "tabZero": 1
+          },
+          {
+            "label": "Model",
+            "radios": 2,
+            "tabZero": 1
+          },
+          {
             "label": "Renderer",
             "radios": 2,
             "tabZero": 1
@@ -589,8 +823,12 @@
             "home": "Dusk"
           },
           "backend-group": {
-            "end": "GL",
-            "home": "2D"
+            "end": "Canvas 2D",
+            "home": "WebGL2"
+          },
+          "look-group": {
+            "end": "Classic",
+            "home": "Sunlit"
           }
         },
         "focusRing": {
@@ -658,29 +896,29 @@
       "title": "Performance (12 growing webs)",
       "status": "PASS",
       "numbers": {
-        "glRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)",
-        "hardware": true,
+        "glRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "hardware": false,
         "st-andrews-cross:2d": {
           "frames": 240,
-          "meanMs": 16.67,
-          "p95Ms": 16.8
+          "meanMs": 22.15,
+          "p95Ms": 33.4
         },
         "st-andrews-cross:gl": {
-          "frames": 240,
-          "meanMs": 16.67,
-          "p95Ms": 16.7
+          "frames": 29,
+          "meanMs": 1056.28,
+          "p95Ms": 2266.6
         },
         "golden-orb-weaver:2d": {
           "frames": 240,
-          "meanMs": 16.67,
-          "p95Ms": 16.7
+          "meanMs": 20.55,
+          "p95Ms": 33.4
         },
         "golden-orb-weaver:gl": {
-          "frames": 240,
-          "meanMs": 16.67,
-          "p95Ms": 16.8
+          "frames": 23,
+          "meanMs": 1910.07,
+          "p95Ms": 4699.8
         },
-        "note": "hardware GPU as named in glRenderer"
+        "note": "software renderer: timings are not representative of GPU hardware; no 60 fps claim"
       },
       "evidence": []
     }

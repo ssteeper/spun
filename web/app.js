@@ -111,7 +111,8 @@ panel = new ScenePanel({
   settings,
   getMode: () => manager.mode,
   backend: {
-    available: () => Boolean(glRenderer?.sunlitAvailable),
+    glAvailable: () => Boolean(glRenderer),
+    sunlitAvailable: () => Boolean(glRenderer?.sunlitAvailable),
     current: () => manager.backend,
     set: value => manager.setBackend(value),
   },

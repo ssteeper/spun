@@ -26,6 +26,7 @@ uniform float u_pxPerMm;      // device px per mm
 uniform float u_zTop;         // highest point of the model (mm)
 uniform vec3 u_joints[56];    // 8 legs x 7 points
 uniform vec4 u_legBounds[8];  // bounding sphere per leg
+uniform vec4 u_bodyBox;       // min x, max x, half width, top z of the body (mm)
 uniform vec4 u_abd;           // x, rx, ry, rz
 uniform vec4 u_car;           // x, rx, ry, rz
 uniform vec2 u_bodyZ;         // abdomen and carapace centre heights
@@ -516,9 +517,20 @@ void main() {
   vec2 d = v_p - u_center;
   vec2 local = vec2(dot(d, u_axis), dot(d, vec2(-u_axis.y, u_axis.x))) / u_pxPerMm;
   float pixel = 1.0 / u_pxPerMm;
-  vec3 ro = vec3(local, u_zTop);
+  // Footprint test: most of the quad is empty space between the legs. A ray that misses every part's
+  // bounding volume is discarded at once; the rest start just above the tallest part beneath them.
+  float startZ = -1e9;
+  for (int leg = 0; leg < 8; leg++) {
+    vec4 b = u_legBounds[leg];
+    float reach = b.w + pixel;
+    vec2 off = local - b.xy;
+    if (dot(off, off) < reach * reach) startZ = max(startZ, b.z + sqrt(max(0.0, reach * reach - dot(off, off))));
+  }
+  if (u_bodyVisible > 0.5 && local.x > u_bodyBox.x && local.x < u_bodyBox.y && abs(local.y) < u_bodyBox.z) startZ = max(startZ, u_bodyBox.w);
+  if (startZ < -1e8) discard;
+  vec3 ro = vec3(local, min(u_zTop, startZ + pixel));
   float t = 0.0;
-  float tMax = u_zTop + 0.25 * u_L;
+  float tMax = ro.z + 0.25 * u_L;
   float minD = 1e9;
   float tMin = 0.0;
   bool hit = false;
@@ -608,7 +620,11 @@ void main() {
   float back = max(0.0, -S.z);
   float depthIn = -map(pos - n * 0.12 * u_L) / (0.12 * u_L);
   float transmit = clamp(1.0 - depthIn, 0.0, 1.0) * thin;
-  col += u_colTissue * u_sunRadiance * vis * back * transmit * (0.35 + 0.65 * pow(1.0 - nv, 2.0)) * 0.6 * u_translucency;
+  // Pigmented leg cuticle filters what comes through: dark legs stay dark against the sun while
+  // pale joints and bands glow.
+  vec3 through = u_colTissue;
+  if (id.x > 2.5 && id.x < 3.5) through = sqrt(u_colTissue * albedo) * smoothstep(0.02, 0.35, dot(albedo, vec3(0.2126, 0.7152, 0.0722)));
+  col += through * u_sunRadiance * vis * back * transmit * (0.35 + 0.65 * pow(1.0 - nv, 2.0)) * 0.6 * u_translucency;
   // Setae catch the light at grazing angles.
   float rim = pow(1.0 - nv, 3.0);
   vec2 facing = n.xy / max(length(n.xy), 1e-4);
