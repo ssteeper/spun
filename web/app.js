@@ -7,6 +7,8 @@ import { SceneSettings } from "./core/settings.js";
 import { ScenePanel } from "./core/panel.js";
 import { GLRenderer } from "./gl/glRenderer.js";
 
+// Tells the recovery script in index.html that this release's modules are the ones running.
+document.documentElement.dataset.shell = "2";
 const query = new URLSearchParams(location.search);
 const debugEnabled = query.get("debug") === "1";
 const stageElement = document.querySelector("#stage");

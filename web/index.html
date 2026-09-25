@@ -10,6 +10,22 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
+  <script>
+    // An older service worker may have answered this page's styles and scripts from the previous
+    // release. If this release's app.js has not marked the page when the new worker takes over,
+    // reload once so every file comes from the same release.
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (document.documentElement.dataset.shell === "2") return;
+        try {
+          if (sessionStorage.getItem("spun-shell-reload")) return;
+          sessionStorage.setItem("spun-shell-reload", "1");
+        } catch { return; }
+        location.reload();
+      }, { once: true });
+      navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+    }
+  </script>
   <script type="module" src="./app.js"></script>
 </head>
 <body>

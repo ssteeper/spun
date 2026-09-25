@@ -1,4 +1,4 @@
-const VERSION = 'd6d3c02acce6fb18';
+const VERSION = 'fe9c49a56a61ef97';
 const SHELL_CACHE = `spun-shell-${VERSION}`;
 const DATA_CACHE = `spun-data-${VERSION}`;
 const INDEX_URL = "specimens/index.json";
@@ -92,9 +92,16 @@ async function staleWhileRevalidate(request, event) {
   return refresh;
 }
 
+// Network first: online, the page, its styles and its modules always come from one release (the
+// navigation itself is network-first too). The cache answers only when the network fails.
 async function shellAsset(request) {
+  let response;
+  try {
+    response = await fetch(request);
+    if (response.ok) return response;
+  } catch { /* offline */ }
   const cached = await caches.match(request, { cacheName: SHELL_CACHE, ignoreSearch: true });
-  return cached || fetch(request);
+  return cached || response || Response.error();
 }
 
 self.addEventListener("fetch", event => {
